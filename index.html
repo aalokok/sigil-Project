@@ -26,6 +26,7 @@
     <button id="mirrorXBtn">Mirror X (On)</button>
     <button id="mirrorYBtn">Mirror Y (Off)</button>
     <button id="mirrorZBtn">Mirror Z (Off)</button>
+    <button id="invertColorsBtn">Invert Colors (Off)</button>
   </div>
   <div id="postfx-controls">
     <div><label for="noiseAmount">Noise Amount:</label><input type="range" id="noiseAmount" min="0" max="0.2" step="0.001" value="0.03"></div>
@@ -47,6 +48,7 @@
     import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
     import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
     import { ThresholdShader } from './ThresholdShader.js'; // Import ThresholdShader
+    import { ColorInversionManager } from './ColorInvertShader.js'; // Import ColorInversionManager
     import { Cybersigil, MAX_BRANCH_DEPTH, simplex /*, other constants if needed directly by index.html */ } from './Cybersigil.js'; // Import Cybersigil class and MAX_BRANCH_DEPTH
     // import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js'; // REMOVED
     // import SimplexNoise from 'simplex-noise'; // REMOVED - Now in Cybersigil.js
@@ -134,6 +136,15 @@
 
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
+
+    // Initialize Color Inversion Manager
+    let colorInversionManager;
+    
+    // Wait for composer to be ready, then initialize inversion manager
+    setTimeout(() => {
+        colorInversionManager = new ColorInversionManager(composer);
+        console.log('Color inversion manager initialized');
+    }, 100);
 
     // ── Materials & geometry prototypes ───────────────────────────────
     const chrome = new THREE.MeshStandardMaterial({color:0xd8d8d8,metalness:1,roughness:.12,envMapIntensity:2});
@@ -309,6 +320,7 @@
     const mirrorXBtn = document.getElementById('mirrorXBtn');
     const mirrorYBtn = document.getElementById('mirrorYBtn');
     const mirrorZBtn = document.getElementById('mirrorZBtn');
+    const invertColorsBtn = document.getElementById('invertColorsBtn');
 
     function setupMirrorButton(button, stateVarName, axisLabel) {
         // Determine initial active state based on the global variable
@@ -351,6 +363,21 @@
     setupMirrorButton(mirrorXBtn, 'mirrorXActive', 'X');
     setupMirrorButton(mirrorYBtn, 'mirrorYActive', 'Y');
     setupMirrorButton(mirrorZBtn, 'mirrorZActive', 'Z');
+
+    // Color Inversion Button Logic
+    invertColorsBtn.addEventListener('click', () => {
+        if (colorInversionManager) {
+            const isInverted = colorInversionManager.toggleInversion();
+            invertColorsBtn.textContent = `Invert Colors (${isInverted ? 'On' : 'Off'})`;
+            if (isInverted) {
+                invertColorsBtn.classList.add('active');
+            } else {
+                invertColorsBtn.classList.remove('active');
+            }
+        } else {
+            console.warn('Color inversion manager not yet initialized');
+        }
+    });
 
     // Post-processing Sliders
     const noiseAmountSlider = document.getElementById('noiseAmount');
@@ -417,6 +444,48 @@
         }
     }
 
+    function resetAudioProcessing() {
+        console.log("Resetting audio processing...");
+        
+        // Reset timing and state variables
+        lastBeatTime = 0;
+        
+        // Disconnect existing audio nodes if they exist
+        if (audioSourceNode) {
+            try {
+                audioSourceNode.disconnect();
+            } catch (e) {
+                console.warn("Error disconnecting audio source:", e);
+            }
+            audioSourceNode = null;
+        }
+        
+        // Reset setup flag to force re-initialization
+        isAudioSetup = false;
+        
+        // If audio context exists and is not closed, close it
+        if (audioContext && audioContext.state !== 'closed') {
+            try {
+                audioContext.close();
+            } catch (e) {
+                console.warn("Error closing audio context:", e);
+            }
+        }
+        audioContext = null;
+        analyserNode = null;
+        audioDataArray = null;
+        
+        // Re-setup if audio player has a source and is ready
+        if (audioPlayer.src && audioPlayer.readyState >= 2) {
+            setTimeout(() => {
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+                setupAudioProcessing();
+            }, 100);
+        }
+    }
+
     noiseAmountSlider.addEventListener('input', (event) => {
        if (noisePass) noisePass.uniforms.uNoiseAmount.value = parseFloat(event.target.value);
     });
@@ -471,22 +540,46 @@
     audioUploadInput.addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (file) {
+            // Reset audio processing before loading new file
+            resetAudioProcessing();
+            
             const reader = new FileReader();
             reader.onload = (e) => {
                 audioPlayer.src = e.target.result;
                 audioPlayer.oncanplaythrough = () => {
                     // (Re)setup audio processing when a new file is loaded and ready
-                    isAudioSetup = false; // Reset flag to allow setup
-                    if (audioContext && audioContext.state === 'suspended') {
-                        audioContext.resume();
-                    }
                     setupAudioProcessing();
-                    // audioPlayer.play(); // Optional: auto-play
                     console.log("Audio file loaded, processing (re)initialized.");
                 };
             };
             reader.readAsDataURL(file);
         }
+    });
+
+    // Add event listeners for audio seeking and looping
+    audioPlayer.addEventListener('seeked', () => {
+        console.log("Audio seeked, resetting beat timing...");
+        lastBeatTime = 0; // Reset beat timing when seeking
+    });
+
+    audioPlayer.addEventListener('ended', () => {
+        console.log("Audio ended, resetting for potential loop...");
+        lastBeatTime = 0; // Reset beat timing when song ends
+    });
+
+    audioPlayer.addEventListener('play', () => {
+        console.log("Audio play event, ensuring audio processing is ready...");
+        if (!isAudioSetup && audioPlayer.src) {
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            setupAudioProcessing();
+        }
+    });
+
+    audioPlayer.addEventListener('loadstart', () => {
+        console.log("Audio load start, resetting audio processing...");
+        resetAudioProcessing();
     });
 
     addEventListener('keydown',e=>{
