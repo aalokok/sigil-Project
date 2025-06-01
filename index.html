@@ -408,62 +408,58 @@
     let trebleStartIndex, trebleEndIndex;
 
     function setupAudioProcessing() {
-        if (!isAudioSetup && audioPlayer.src) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyserNode = audioContext.createAnalyser();
-            analyserNode.fftSize = 1024; // Increased for better frequency resolution
-            analyserNode.smoothingTimeConstant = 0.75; // Add some smoothing
-            audioDataArray = new Uint8Array(analyserNode.frequencyBinCount);
+        if (!isAudioSetup && window.audioPlayer && window.audioPlayer.src) {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyserNode = audioContext.createAnalyser();
+                analyserNode.fftSize = 1024; // Increased for better frequency resolution
+                analyserNode.smoothingTimeConstant = 0.75; // Add some smoothing
+                audioDataArray = new Uint8Array(analyserNode.frequencyBinCount);
 
-            // Calculate frequency band indices based on actual sample rate and fftSize
-            const nyquist = audioContext.sampleRate / 2;
-            const freqPerBin = nyquist / analyserNode.frequencyBinCount;
-            
-            bassStartIndex = 0; // Typically from ~20Hz
-            bassEndIndex = Math.floor(250 / freqPerBin); // up to 250Hz
-            midStartIndex = Math.floor(251 / freqPerBin);
-            midEndIndex = Math.floor(2000 / freqPerBin); // 251Hz to 2000Hz
-            trebleStartIndex = Math.floor(2001 / freqPerBin);
-            trebleEndIndex = Math.min(Math.floor(10000 / freqPerBin), analyserNode.frequencyBinCount - 1); // 2001Hz to 10000Hz
+                // Calculate frequency band indices based on actual sample rate and fftSize
+                const nyquist = audioContext.sampleRate / 2;
+                const freqPerBin = nyquist / analyserNode.frequencyBinCount;
+                
+                bassStartIndex = 0; // Typically from ~20Hz
+                bassEndIndex = Math.floor(250 / freqPerBin); // up to 250Hz
+                midStartIndex = Math.floor(251 / freqPerBin);
+                midEndIndex = Math.floor(2000 / freqPerBin); // 251Hz to 2000Hz
+                trebleStartIndex = Math.floor(2001 / freqPerBin);
+                trebleEndIndex = Math.min(Math.floor(10000 / freqPerBin), analyserNode.frequencyBinCount - 1); // 2001Hz to 10000Hz
 
-            console.log(`Audio Setup: SampleRate=${audioContext.sampleRate}, FreqPerBin=${freqPerBin.toFixed(2)}Hz`);
-            console.log(`Bands: Bass (${bassStartIndex}-${bassEndIndex}), Mid (${midStartIndex}-${midEndIndex}), Treble (${trebleStartIndex}-${trebleEndIndex})`);
+                console.log(`Audio Setup: SampleRate=${audioContext.sampleRate}, FreqPerBin=${freqPerBin.toFixed(2)}Hz`);
+                console.log(`Bands: Bass (${bassStartIndex}-${bassEndIndex}), Mid (${midStartIndex}-${midEndIndex}), Treble (${trebleStartIndex}-${trebleEndIndex})`);
 
-            // Create an audio source from the <audio> element if it doesn't exist or if the context was recreated
-            if (!audioSourceNode || audioSourceNode.mediaElement !== audioPlayer) {
-                 if (audioSourceNode) {
-                    audioSourceNode.disconnect(); // Disconnect old source if any
-                 }
-                audioSourceNode = audioContext.createMediaElementSource(audioPlayer);
+                // Always create a fresh media element source
+                audioSourceNode = audioContext.createMediaElementSource(window.audioPlayer);
+                audioSourceNode.connect(analyserNode);
+                analyserNode.connect(audioContext.destination); // Connect analyser to output to hear the audio
+                
+                isAudioSetup = true;
+                console.log("Audio processing setup complete.");
+            } catch (error) {
+                console.error("Error setting up audio processing:", error);
+                isAudioSetup = false;
             }
-
-            audioSourceNode.connect(analyserNode);
-            analyserNode.connect(audioContext.destination); // Connect analyser to output to hear the audio
-            isAudioSetup = true;
-            console.log("Audio processing setup complete.");
         }
     }
 
-    function resetAudioProcessing() {
-        console.log("Resetting audio processing...");
+    function fullAudioReset() {
+        console.log("Full audio reset...");
         
         // Reset timing and state variables
         lastBeatTime = 0;
+        isAudioSetup = false;
         
-        // Disconnect existing audio nodes if they exist
+        // Disconnect and clear everything
         if (audioSourceNode) {
             try {
                 audioSourceNode.disconnect();
             } catch (e) {
                 console.warn("Error disconnecting audio source:", e);
             }
-            audioSourceNode = null;
         }
         
-        // Reset setup flag to force re-initialization
-        isAudioSetup = false;
-        
-        // If audio context exists and is not closed, close it
         if (audioContext && audioContext.state !== 'closed') {
             try {
                 audioContext.close();
@@ -471,19 +467,40 @@
                 console.warn("Error closing audio context:", e);
             }
         }
+        
+        // Clear all references
+        audioSourceNode = null;
         audioContext = null;
         analyserNode = null;
         audioDataArray = null;
         
-        // Re-setup if audio player has a source and is ready
-        if (audioPlayer.src && audioPlayer.readyState >= 2) {
-            setTimeout(() => {
-                if (audioContext && audioContext.state === 'suspended') {
-                    audioContext.resume();
-                }
-                setupAudioProcessing();
-            }, 100);
+        console.log("Audio reset complete");
+    }
+
+    function createNewAudioElement(src) {
+        console.log("Creating new audio element...");
+        
+        // Remove old audio element
+        const oldAudio = document.getElementById('audioPlayer');
+        if (oldAudio) {
+            oldAudio.remove();
         }
+        
+        // Create new audio element
+        const newAudio = document.createElement('audio');
+        newAudio.id = 'audioPlayer';
+        newAudio.controls = true;
+        newAudio.loop = true;
+        newAudio.src = src;
+        
+        // Insert new audio element
+        const postfxControls = document.getElementById('postfx-controls');
+        postfxControls.appendChild(newAudio);
+        
+        // Update global reference
+        window.audioPlayer = newAudio;
+        
+        return newAudio;
     }
 
     noiseAmountSlider.addEventListener('input', (event) => {
@@ -540,46 +557,63 @@
     audioUploadInput.addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (file) {
-            // Reset audio processing before loading new file
-            resetAudioProcessing();
+            console.log("New audio file selected, performing full reset...");
+            
+            // Full reset before loading new file
+            fullAudioReset();
             
             const reader = new FileReader();
             reader.onload = (e) => {
-                audioPlayer.src = e.target.result;
-                audioPlayer.oncanplaythrough = () => {
-                    // (Re)setup audio processing when a new file is loaded and ready
-                    setupAudioProcessing();
-                    console.log("Audio file loaded, processing (re)initialized.");
+                // Create completely new audio element
+                const newAudioPlayer = createNewAudioElement(e.target.result);
+                console.log("New audio element created with src");
+                
+                // Set up event handlers for the new audio
+                const setupWhenReady = () => {
+                    if (newAudioPlayer.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+                        console.log("Audio ready, setting up processing...");
+                        setTimeout(() => {
+                            setupAudioProcessing();
+                        }, 100);
+                    }
                 };
+                
+                newAudioPlayer.oncanplaythrough = setupWhenReady;
+                newAudioPlayer.onloadeddata = setupWhenReady;
+                
+                // Add the standard event listeners to the new audio element
+                newAudioPlayer.addEventListener('seeked', () => {
+                    console.log("Audio seeked, resetting beat timing...");
+                    lastBeatTime = 0;
+                });
+
+                newAudioPlayer.addEventListener('ended', () => {
+                    console.log("Audio ended, resetting for potential loop...");
+                    lastBeatTime = 0;
+                });
+
+                newAudioPlayer.addEventListener('play', () => {
+                    console.log("Audio play event...");
+                    if (audioContext && audioContext.state === 'suspended') {
+                        console.log("Resuming suspended audio context...");
+                        audioContext.resume().then(() => {
+                            console.log("Audio context resumed successfully");
+                        });
+                    }
+                    
+                    if (!isAudioSetup && newAudioPlayer.src && newAudioPlayer.readyState >= 2) {
+                        console.log("Setting up audio processing on play...");
+                        setupAudioProcessing();
+                    }
+                });
+
+                newAudioPlayer.addEventListener('error', (e) => {
+                    console.error("Audio error:", e);
+                    fullAudioReset();
+                });
             };
             reader.readAsDataURL(file);
         }
-    });
-
-    // Add event listeners for audio seeking and looping
-    audioPlayer.addEventListener('seeked', () => {
-        console.log("Audio seeked, resetting beat timing...");
-        lastBeatTime = 0; // Reset beat timing when seeking
-    });
-
-    audioPlayer.addEventListener('ended', () => {
-        console.log("Audio ended, resetting for potential loop...");
-        lastBeatTime = 0; // Reset beat timing when song ends
-    });
-
-    audioPlayer.addEventListener('play', () => {
-        console.log("Audio play event, ensuring audio processing is ready...");
-        if (!isAudioSetup && audioPlayer.src) {
-            if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume();
-            }
-            setupAudioProcessing();
-        }
-    });
-
-    audioPlayer.addEventListener('loadstart', () => {
-        console.log("Audio load start, resetting audio processing...");
-        resetAudioProcessing();
     });
 
     addEventListener('keydown',e=>{
@@ -623,7 +657,7 @@
       let audioFeatures = { bass: 0, mid: 0, treble: 0, beat: false, overallVolume: 0 };
 
       // Audio-reactive logic
-      if (isAudioSetup && audioPlayer.paused === false) {
+      if (isAudioSetup && window.audioPlayer && !window.audioPlayer.paused) {
           analyserNode.getByteFrequencyData(audioDataArray);
           
           let bassSum = 0, midSum = 0, trebleSum = 0, overallSum = 0;
@@ -682,13 +716,13 @@
       }
       
       // Auto-rotate entire scene on Z-axis when audio is playing
-      if (isAudioSetup && audioPlayer.paused === false) {
+      if (isAudioSetup && window.audioPlayer && !window.audioPlayer.paused) {
           const autoRotationSpeed = 0.1; // Slow rotation speed (radians per second)
           scene.rotation.z += autoRotationSpeed * delta;
       }
       
       // Audio-reactive PostFX & SCENE Background
-      if (isAudioSetup && audioPlayer.paused === false) {
+      if (isAudioSetup && window.audioPlayer && !window.audioPlayer.paused) {
         if (noisePass && noisePass.uniforms.uNoiseAmount) {
             // Noise amount is now solely controlled by its slider
             noisePass.uniforms.uNoiseAmount.value = parseFloat(noiseAmountSlider.value);
