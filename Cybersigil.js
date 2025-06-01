@@ -39,10 +39,10 @@ export const BRANCH_MATERIAL_CONFIG = {
     side: THREE.DoubleSide,
     transparent: false,
     emissive: new THREE.Color(0xffffff),
-    emissiveIntensity: 0.7
+    emissiveIntensity: 1.0
 };
 // Initial color, will be changed dynamically
-const INITIAL_BRANCH_COLOR = new THREE.Color(0x000000);
+const INITIAL_BRANCH_COLOR = new THREE.Color(0xffffff);
 
 // Helper vectors and function for triangle strip generation
 export const globalReferenceUp = new THREE.Vector3(0, 1, 0);
@@ -190,34 +190,48 @@ export function growStep(branch, delta, sigil, isInteracting = false, audioFeatu
 
             // --- Audio Reactive Color --- 
             if (branch.mesh && branch.mesh.material) {
-                const targetColor = new THREE.Color();
-                targetColor.setRGB(
-                    THREE.MathUtils.clamp(audioFeatures.bass * 3.0, 0, 1),       // Increased Red component reactivity
-                    THREE.MathUtils.clamp(audioFeatures.mid * 2.5, 0, 1),        // Increased Green component reactivity
-                    THREE.MathUtils.clamp(audioFeatures.treble * 3.5, 0, 1)     // Increased Blue component reactivity
+                const baseWhite = INITIAL_BRANCH_COLOR; // Start with white
+                const audioColorInfluence = new THREE.Color(
+                    THREE.MathUtils.clamp(audioFeatures.bass * 2.0, 0, 1),    // Bass influences Red
+                    THREE.MathUtils.clamp(audioFeatures.mid * 2.0, 0, 1),     // Mid influences Green
+                    THREE.MathUtils.clamp(audioFeatures.treble * 2.0, 0, 1)  // Treble influences Blue
                 );
-                if (branch.mesh.material.color) { 
-                     branch.mesh.material.color.lerp(targetColor, 0.2); // Increased lerp factor for base color
+
+                // If there's significant audio, lerp from white towards the audio color.
+                // Otherwise, lerp back towards white.
+                let targetColor = new THREE.Color(0xffffff);
+                const audioMagnitude = (audioFeatures.bass + audioFeatures.mid + audioFeatures.treble) / 3;
+
+                if (audioMagnitude > 0.05) { // Threshold to apply color change
+                    // Mix white with audio color. Higher audioMagnitude means more audioColor.
+                    targetColor.lerpColors(baseWhite, audioColorInfluence, audioMagnitude * 2.5); // Stronger influence
                 } else {
-                    branch.mesh.material.color = targetColor; 
+                    targetColor.copy(baseWhite); // Stay white or quickly return to white
+                }
+
+                if (branch.mesh.material.color) { 
+                     branch.mesh.material.color.lerp(targetColor, 0.15); // Lerp towards the target (either white or audio-influenced)
+                } else {
+                    branch.mesh.material.color = targetColor.clone(); 
                 }
 
                 // Audio-reactive emissive color and intensity
                 if (branch.mesh.material.emissive) { 
                     const emissiveTargetColor = new THREE.Color();
-                    const overallBrightness = THREE.MathUtils.clamp(audioFeatures.overallVolume * 1.5, 0.1, 1.0); // Slightly increased overall brightness impact
+                    const overallBrightness = THREE.MathUtils.clamp(audioFeatures.overallVolume * 2.0, 0.1, 1.0); // Increased brightness impact
+                    
+                    // Emissive color is also influenced by audio frequencies but can be brighter
                     emissiveTargetColor.setRGB(
-                        THREE.MathUtils.clamp(audioFeatures.treble * 2.5 * overallBrightness, 0, 1),  // Increased Emissive R reactivity
-                        THREE.MathUtils.clamp(audioFeatures.mid * 1.5 * overallBrightness, 0, 1),     // Increased Emissive G reactivity
-                        THREE.MathUtils.clamp(audioFeatures.bass * 1.0 * overallBrightness, 0, 1)     // Increased Emissive B reactivity
+                        THREE.MathUtils.clamp(audioFeatures.treble * 3.0 * overallBrightness, 0, 1), 
+                        THREE.MathUtils.clamp(audioFeatures.mid * 2.0 * overallBrightness, 0, 1),    
+                        THREE.MathUtils.clamp(audioFeatures.bass * 2.5 * overallBrightness, 0, 1)     
                     );
-                    branch.mesh.material.emissive.lerp(emissiveTargetColor, 0.25); // Increased lerp for emissive color
+                    branch.mesh.material.emissive.lerp(emissiveTargetColor, 0.3); // Faster lerp for emissive
 
                     // Audio-reactive emissive intensity
-                    // Base intensity is from BRANCH_MATERIAL_CONFIG.emissiveIntensity
-                    const baseEmissiveIntensity = BRANCH_MATERIAL_CONFIG.emissiveIntensity || 0.7; // Fallback consistent with new base
-                    const intensityPulse = audioFeatures.overallVolume * 1.0; // Increased pulse effect
-                    branch.mesh.material.emissiveIntensity = THREE.MathUtils.clamp(baseEmissiveIntensity + intensityPulse, 0.3, 1.8); // Adjusted clamp range
+                    const baseEmissiveIntensity = BRANCH_MATERIAL_CONFIG.emissiveIntensity || 1.0;
+                    const intensityPulse = audioFeatures.overallVolume * 1.5; // Stronger pulse effect
+                    branch.mesh.material.emissiveIntensity = THREE.MathUtils.clamp(baseEmissiveIntensity + intensityPulse, 0.5, 2.0); // Adjusted clamp range, removed beat boost
                 }
             }
             // --- End Audio Reactive Color ---

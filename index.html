@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <title>Cybersigil Growth – Branching Animation</title>
   <style>
-    html,body{margin:0;height:100%;overflow:hidden;background:#fff}
-    #hud{position:fixed;top:8px;left:8px;font:12px monospace;color:#333;z-index:10}
+    html,body{margin:0;height:100%;overflow:hidden;background:#000}
+    #hud{position:fixed;top:8px;left:8px;font:12px monospace;color:#eee;z-index:10}
     #hud button { margin-left: 10px; background: #555; color: #fff; border: 1px solid #333; cursor: pointer; padding: 2px 5px;}
     #mirror-controls{ position: fixed; top: 8px; right: 8px; z-index: 10; }
     #mirror-controls button { font:11px monospace; margin-left: 5px; background: #eee; color: #333; border: 1px solid #ccc; padding: 3px 6px; }
@@ -28,8 +28,10 @@
     <button id="mirrorZBtn">Mirror Z (Off)</button>
   </div>
   <div id="postfx-controls">
-    <div><label for="bloomStrength">Bloom Strength:</label><input type="range" id="bloomStrength" min="0" max="3" step="0.01" value="0.5"></div>
     <div><label for="noiseAmount">Noise Amount:</label><input type="range" id="noiseAmount" min="0" max="0.2" step="0.001" value="0.03"></div>
+    <div><label for="bloomStrength">Bloom Strength:</label><input type="range" id="bloomStrength" min="0" max="3" step="0.1" value="1.5"></div>
+    <div><label for="bloomRadius">Bloom Radius:</label><input type="range" id="bloomRadius" min="0" max="1" step="0.01" value="0.4"></div>
+    <div><label for="bloomThreshold">Bloom Threshold:</label><input type="range" id="bloomThreshold" min="0" max="1" step="0.01" value="0.85"></div>
     <div><label for="thresholdStrength">Threshold Strength:</label><input type="range" id="thresholdStrength" min="0" max="1" step="0.01" value="0.5"></div>
     <div><label for="imageUpload">Threshold Image:</label><input type="file" id="imageUpload" accept="image/png, image/jpeg"></div>
     <div><label for="inverseThreshold">Inverse Threshold:</label><input type="checkbox" id="inverseThreshold" checked></div>
@@ -53,7 +55,7 @@
 
     // ── Scene ─────────────────────────────────────────────────────────
     const scene  = new THREE.Scene();
-    scene.background = null; // Make scene background transparent
+    scene.background = new THREE.Color(0x000000); // Initialize scene background to black
     const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, .1, 1000);
     camera.position.set(0, 14, 90);
 
@@ -81,6 +83,15 @@
     const composer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
+
+    // Add Bloom Pass
+    const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(innerWidth, innerHeight), // resolution
+        1.5,    // strength
+        0.4,    // radius
+        0.85    // threshold
+    );
+    composer.addPass(bloomPass);
 
     const thresholdPass = new ShaderPass(ThresholdShader); 
     if (thresholdPass) thresholdPass.uniforms.uInverseThreshold.value = true; 
@@ -120,9 +131,6 @@
     };
     const noisePass = new ShaderPass(NoiseShader);
     composer.addPass(noisePass);
-
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.0, 2.0, 0.5); 
-    composer.addPass(bloomPass); 
 
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
@@ -345,8 +353,10 @@
     setupMirrorButton(mirrorZBtn, 'mirrorZActive', 'Z');
 
     // Post-processing Sliders
-    const bloomStrengthSlider = document.getElementById('bloomStrength');
     const noiseAmountSlider = document.getElementById('noiseAmount');
+    const bloomStrengthSlider = document.getElementById('bloomStrength');
+    const bloomRadiusSlider = document.getElementById('bloomRadius');
+    const bloomThresholdSlider = document.getElementById('bloomThreshold');
     const thresholdStrengthSlider = document.getElementById('thresholdStrength');
     const imageUploadInput = document.getElementById('imageUpload');
     const inverseThresholdCheckbox = document.getElementById('inverseThreshold');
@@ -362,7 +372,7 @@
     let isAudioSetup = false;
     let lastBeatTime = 0;
     const BEAT_COOLDOWN = 0.25; // Seconds, prevent too many branches at once - slightly increased
-    const BASS_THRESHOLD_BEAT = 0.5; // Normalized bass value (0-1) to trigger a beat - adjust this!
+    const BASS_THRESHOLD_BEAT = 0.95; // Increased threshold - only trigger on strong bass/snare hits
 
     // Frequency band definitions (approximate, will depend on sampleRate and fftSize)
     // These are indices into the audioDataArray
@@ -407,17 +417,24 @@
         }
     }
 
-    bloomStrengthSlider.addEventListener('input', (event) => {
-       if (bloomPass) bloomPass.strength = parseFloat(event.target.value);
-    });
-    bloomStrengthSlider.value = "0.0"; // Ensure slider starts at 0 to match initial pass strength
-
     noiseAmountSlider.addEventListener('input', (event) => {
        if (noisePass) noisePass.uniforms.uNoiseAmount.value = parseFloat(event.target.value);
     });
     
     // Set initial noise slider value from shader default
     if (noisePass) noiseAmountSlider.value = noisePass.uniforms.uNoiseAmount.value;
+
+    bloomStrengthSlider.addEventListener('input', (event) => {
+        if (bloomPass) bloomPass.strength = parseFloat(event.target.value);
+    });
+
+    bloomRadiusSlider.addEventListener('input', (event) => {
+        if (bloomPass) bloomPass.radius = parseFloat(event.target.value);
+    });
+
+    bloomThresholdSlider.addEventListener('input', (event) => {
+        if (bloomPass) bloomPass.threshold = parseFloat(event.target.value);
+    });
 
     thresholdStrengthSlider.addEventListener('input', (event) => { // RE-ENABLE
         if (thresholdPass) thresholdPass.uniforms.uThresholdStrength.value = parseFloat(event.target.value);
@@ -497,11 +514,19 @@
 
     const clock=new THREE.Clock();
 
+    // For background flash decay
+    let currentBackgroundColor = new THREE.Color(0x000000);
+    let targetBackgroundColor = new THREE.Color(0x000000);
+    const FLASH_DECAY_SPEED = 8.0; // Faster decay for more reactivity
+    const FLASH_HOLD_TIME = 0.08; // Shorter hold time
+    let flashHoldTimer = 0;
+
     function animate(){
       requestAnimationFrame(animate);
       const delta = clock.getDelta();
       const currentTime = clock.getElapsedTime();
 
+      // Reset beat flag each frame before audio processing
       let audioFeatures = { bass: 0, mid: 0, treble: 0, beat: false, overallVolume: 0 };
 
       // Audio-reactive logic
@@ -535,41 +560,42 @@
           // console.log(`Bass: ${audioFeatures.bass.toFixed(2)}, Mid: ${audioFeatures.mid.toFixed(2)}, Treble: ${audioFeatures.treble.toFixed(2)}`);
 
           if (audioFeatures.bass > BASS_THRESHOLD_BEAT && (currentTime - lastBeatTime > BEAT_COOLDOWN)) {
-              console.log(`Beat detected! Bass: ${audioFeatures.bass.toFixed(2)}, Time: ${currentTime.toFixed(2)}`);
               lastBeatTime = currentTime;
-              audioFeatures.beat = true; // Set beat flag
+              audioFeatures.beat = true; // Set beat flag for other systems to use (like background flash)
+              console.log(`Beat detected! Bass: ${audioFeatures.bass.toFixed(2)}, Time: ${currentTime.toFixed(2)}, audioFeatures.beat = ${audioFeatures.beat}`);
               
               if (allSigils.length === 0) {
-                  console.log("Audio Beat: No sigils exist, resetting.");
+                  console.log("Audio Beat: No sigils exist. Initializing sigils now.");
                   resetSigil();
+                  // After resetSigil, allSigils[0] should exist for the next beat or spacebar press
               } else {
                   const targetSigil = allSigils[0];
                   if (targetSigil) {
-                      // SpawnNewBranch will now be called based on audioFeatures.beat by the sigil's update method, or here directly if preferred.
-                      // For now, let's keep direct spawning here based on the detected beat.
                       targetSigil.spawnNewBranch(mirrorXActive, mirrorYActive, mirrorZActive); 
-                      console.log("Audio Beat: Spawned new branch directly.");
+                      console.log("Audio Beat: Spawned new branch on existing sigil.");
                   } else {
-                      console.error("Audio Beat: No primary sigil instance found. Resetting.");
+                      // This case should ideally not be reached if allSigils.length > 0 but allSigils[0] is undefined.
+                      // It might indicate an issue with how sigils are added/removed from the allSigils array.
+                      console.error("Audio Beat: Sigil array populated, but targetSigil is undefined. Resetting as a fallback.");
                       resetSigil();
                   }
               }
           }
       }
 
+      // Update sigils AFTER audio processing and beat flag setting
       for(const sigilInstance of allSigils){
         sigilInstance.update(delta, isInteracting, audioFeatures); // Pass audioFeatures
       }
       
-      // Audio-reactive PostFX
+      // Auto-rotate entire scene on Z-axis when audio is playing
       if (isAudioSetup && audioPlayer.paused === false) {
-        if (bloomPass) {
-            // Example: Bass drives bloom strength. Clamp to avoid extreme values.
-            // The default bloom strength is 0.0 as per earlier reset.
-            // Let's make it so bass ADDS to a base level or the slider level.
-            const baseBloom = parseFloat(bloomStrengthSlider.value); // Get current slider value
-            bloomPass.strength = THREE.MathUtils.clamp(baseBloom + (audioFeatures.bass * 0.5), 0, 1.5); 
-        }
+          const autoRotationSpeed = 0.1; // Slow rotation speed (radians per second)
+          scene.rotation.z += autoRotationSpeed * delta;
+      }
+      
+      // Audio-reactive PostFX & SCENE Background
+      if (isAudioSetup && audioPlayer.paused === false) {
         if (noisePass && noisePass.uniforms.uNoiseAmount) {
             // Noise amount is now solely controlled by its slider
             noisePass.uniforms.uNoiseAmount.value = parseFloat(noiseAmountSlider.value);
@@ -580,17 +606,56 @@
             thresholdPass.uniforms.uThresholdStrength.value = THREE.MathUtils.clamp(baseThreshold + (audioFeatures.mid * 0.3) - 0.15, 0.1, 0.9);
         }
 
-        // Audio-reactive background color
-        if (backgroundContainer) {
-            // Use different audio features for background channels to contrast with sigils
-            // Sigil base color uses: R=bass, G=mid, B=treble
-            // Background will use: R=treble, G=bass, B=mid (approximately)
-            // Clamped to be somewhat muted and not pure black/white.
-            const bgR = THREE.MathUtils.clamp(audioFeatures.treble * 0.6 + 0.1, 0.1, 0.7); 
-            const bgG = THREE.MathUtils.clamp(audioFeatures.bass * 0.6 + 0.1, 0.1, 0.7);
-            const bgB = THREE.MathUtils.clamp(audioFeatures.mid * 0.6 + 0.1, 0.1, 0.7);
-            const bgColor = new THREE.Color(bgR, bgG, bgB);
-            backgroundContainer.style.backgroundColor = bgColor.getStyle();
+        // Audio-reactive SCENE background color - Flash effect
+        // DEBUGGING: Log beat status and timer for scene background
+        // console.log(`Frame: Beat = ${audioFeatures.beat}, Hold Timer = ${flashHoldTimer.toFixed(2)}, Scene BG = ${scene.background ? scene.background.getHexString() : 'null'}, CurrentColor = ${currentBackgroundColor.getHexString()}`);
+
+        if (audioFeatures.beat) { // Flash on beat
+            // DEBUGGING: Log when a beat is processed for scene flash
+            // console.log("Beat TRUE - Initiating Scene Flash");
+            const flashColors = [
+                new THREE.Color(0.7, 0.7, 0.7),       // White
+                 // Deep Red
+            ];
+            targetBackgroundColor.copy(flashColors[Math.floor(Math.random() * flashColors.length)]);
+            currentBackgroundColor.copy(targetBackgroundColor); // currentBackgroundColor now holds the flash color
+            scene.background = currentBackgroundColor; // Apply immediately
+            flashHoldTimer = FLASH_HOLD_TIME; // Reset hold timer
+        } else {
+            if (flashHoldTimer > 0) {
+                flashHoldTimer -= delta;
+                // scene.background is already currentBackgroundColor (the flash color), 
+                // so no change needed here during the hold period. It will be updated in the next frame if still holding.
+                scene.background = currentBackgroundColor; // Ensure it stays the flash color
+                // DEBUGGING: Log when scene flash is being held
+                // console.log(`Holding Scene Flash: Timer = ${flashHoldTimer.toFixed(2)}, BG = ${scene.background.getHexString()}`);
+            } else {
+                // Resting color for scene background is black
+                const restingColor = new THREE.Color(0x000000);
+                
+                // Lerp currentBackgroundColor towards the resting black color
+                currentBackgroundColor.lerp(restingColor, delta * FLASH_DECAY_SPEED);
+                scene.background = currentBackgroundColor; // Apply the lerped color
+                // DEBUGGING: Log when scene flash is decaying
+                // console.log(`Decaying Scene Flash: Current BG = ${scene.background.getHexString()}, Target = ${restingColor.getHexString()}`);
+            }
+        }
+      } else { // Audio is not setup or paused
+          // Ensure scene background decays to black if a flash was in progress or set to black if idle
+          const restingColor = new THREE.Color(0x000000);
+          if (flashHoldTimer > 0) { // If audio stops during a hold, continue hold then decay
+               flashHoldTimer -= delta;
+               // scene.background should remain the flash color (currentBackgroundColor)
+               scene.background = currentBackgroundColor;
+          } else {
+              // If currentBackgroundColor is not already black, lerp it.
+              // Otherwise, ensure scene.background is black.
+              if (!currentBackgroundColor.equals(restingColor)) {
+                  currentBackgroundColor.lerp(restingColor, delta * FLASH_DECAY_SPEED);
+              } else {
+                  currentBackgroundColor.copy(restingColor); // Ensure it is exactly black if lerp is done.
+              }
+              scene.background = currentBackgroundColor;
         }
       }
 
@@ -609,7 +674,9 @@
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth,innerHeight);
       composer.setSize(innerWidth, innerHeight); // Resize composer
-      if (bloomPass) bloomPass.setSize(innerWidth, innerHeight);
+      if (bloomPass) {
+          bloomPass.resolution.set(innerWidth, innerHeight); // Resize bloom pass
+      }
     });
   </script>
 </body>
