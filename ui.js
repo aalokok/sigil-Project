@@ -129,6 +129,7 @@ export class UIManager {
                 micToggleBtn.textContent = '🎤 Microphone';
                 micToggleBtn.classList.add('active');
             }
+            this.audioManager.isMicActive = !this.audioManager.isMicActive;
         });
 
         // Audio file upload

@@ -38,26 +38,13 @@ class CybersigilApp {
         this.renderer.setSize(innerWidth, innerHeight);
         document.body.appendChild(this.renderer.domElement);
 
-        // Controls - target the sigil center
+        // Controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
-        this.controls.target.set(0, 0, -10); // Where sigils are centered
         this.isInteracting = false;
-        this.interactionTimeout = null;
 
-        this.controls.addEventListener('start', () => { 
-            this.isInteracting = true;
-            // Clear any existing timeout
-            if (this.interactionTimeout) clearTimeout(this.interactionTimeout);
-        });
-        this.controls.addEventListener('end', () => { 
-            // Delay before audio-reactive camera takes back control
-            this.interactionTimeout = setTimeout(() => {
-                this.isInteracting = false;
-                // Sync our orbit system to current camera position
-                this.syncOrbitFromCamera();
-            }, 1500);
-        });
+        this.controls.addEventListener('start', () => { this.isInteracting = true; });
+        this.controls.addEventListener('end', () => { this.isInteracting = false; });
 
         // Lighting
         this.scene.add(new THREE.HemisphereLight(0xffffff,0x444444,.9));
@@ -182,60 +169,18 @@ class CybersigilApp {
     }
 
     initializeRotation() {
-        // Camera orbit system - keeps sigil in focus while camera moves around it
-        this.cameraOrbitAngleX = 0;      // Vertical orbit angle (pitch)
-        this.cameraOrbitAngleY = 0;      // Horizontal orbit angle (yaw)
-        this.cameraOrbitRadius = 90;     // Distance from center
-        this.cameraLookTarget = new THREE.Vector3(0, 0, -10); // Where sigils are centered
-        
-        // Target values for smooth interpolation
-        this.targetOrbitAngleX = 0;
-        this.targetOrbitAngleY = 0;
-        this.targetOrbitRadius = 90;
-        
-        // Orbit velocity (for continuous movement)
-        this.orbitVelocityX = (Math.random() - 0.5) * 0.3;
-        this.orbitVelocityY = (Math.random() - 0.5) * 0.3;
-        this.targetOrbitVelocityX = this.orbitVelocityX;
-        this.targetOrbitVelocityY = this.orbitVelocityY;
-        
-        // Camera limits
-        this.MIN_ORBIT_RADIUS = 40;
-        this.MAX_ORBIT_RADIUS = 140;
-        this.MAX_ORBIT_ANGLE_X = Math.PI / 3;  // Limit vertical angle to avoid going under/over
-        
-        // Dynamics
-        this.ORBIT_LERP_SPEED = 3.0;
-        this.VELOCITY_LERP_SPEED = 2.5;
-        this.ZOOM_LERP_SPEED = 4.0;
-        this.BEAT_DIRECTION_COOLDOWN = 0.5;
-        this.lastBeatOrbitUpdate = 0;
-        
-        // Instant punch for responsiveness
-        this.orbitPunchX = 0;
-        this.orbitPunchY = 0;
-        this.zoomPunch = 0;
-        this.PUNCH_DECAY = 10.0;
-    }
-
-    syncOrbitFromCamera() {
-        // Calculate orbit angles from current camera position
-        const offset = new THREE.Vector3().subVectors(this.camera.position, this.cameraLookTarget);
-        this.cameraOrbitRadius = offset.length();
-        this.targetOrbitRadius = this.cameraOrbitRadius;
-        
-        // Calculate angles
-        this.cameraOrbitAngleY = Math.atan2(offset.x, offset.z);
-        this.cameraOrbitAngleX = Math.asin(THREE.MathUtils.clamp(offset.y / this.cameraOrbitRadius, -1, 1));
-        
-        this.targetOrbitAngleX = this.cameraOrbitAngleX;
-        this.targetOrbitAngleY = this.cameraOrbitAngleY;
-        
-        // Reset velocities
-        this.orbitVelocityX = 0;
-        this.orbitVelocityY = 0;
-        this.targetOrbitVelocityX = (Math.random() - 0.5) * 0.2;
-        this.targetOrbitVelocityY = (Math.random() - 0.5) * 0.2;
+        // Scene rotation variables
+        this.rotationSpeedX = (Math.random() - 0.5) * 0.2;
+        this.rotationSpeedY = (Math.random() - 0.5) * 0.2;
+        this.rotationSpeedZ = (Math.random() - 0.5) * 0.2;
+        this.targetRotationSpeedX = this.rotationSpeedX;
+        this.targetRotationSpeedY = this.rotationSpeedY;
+        this.targetRotationSpeedZ = this.rotationSpeedZ;
+        this.currentRotationMultiplier = 1.0;
+        this.targetRotationMultiplier = 1.0;
+        this.lastBeatRotationUpdate = 0;
+        this.ROTATION_RAMP_SPEED = 1.8;
+        this.ROTATION_SPEED_LERP = 1.2;
     }
 
     initializeBackground() {
@@ -324,84 +269,51 @@ class CybersigilApp {
         console.log(`RESETsigil: Created new Cybersigil. Total sigils: ${this.allSigils.length}, Position: ${rootInitialGroupPos.x.toFixed(1)}, ${rootInitialGroupPos.y.toFixed(1)}, ${rootInitialGroupPos.z.toFixed(1)}`);
     }
 
-    updateCameraMovement(audioFeatures, delta, currentTime) {
-        // Skip audio-reactive camera when user is interacting with OrbitControls
-        if (this.isInteracting) return;
-        
+    updateRotation(audioFeatures, delta, currentTime) {
         if (this.audioManager.isAudioSetup && (this.audioManager.isMicActive || (window.audioPlayer && !window.audioPlayer.paused))) {
-            // On beats: change orbit direction and add zoom punch
+            // Update target rotation speeds on beats
             if (audioFeatures.beat) {
-                if (currentTime - this.lastBeatOrbitUpdate > this.BEAT_DIRECTION_COOLDOWN) {
-                    // New random orbit velocities
-                    this.targetOrbitVelocityX = (Math.random() - 0.5) * 0.6;
-                    this.targetOrbitVelocityY = (Math.random() - 0.5) * 0.8;
-                    this.lastBeatOrbitUpdate = currentTime;
+                if (currentTime - this.lastBeatRotationUpdate > 1.5) {
+                    this.targetRotationSpeedX = (Math.random() - 0.5) * 0.3;
+                    this.targetRotationSpeedY = (Math.random() - 0.5) * 0.3;
+                    this.targetRotationSpeedZ = (Math.random() - 0.5) * 0.3;
+                    this.lastBeatRotationUpdate = currentTime;
+                    console.log(`Beat: New target speeds X:${this.targetRotationSpeedX.toFixed(3)}, Y:${this.targetRotationSpeedY.toFixed(3)}, Z:${this.targetRotationSpeedZ.toFixed(3)}`);
                 }
-                
-                // Instant punch on every beat
-                const punchIntensity = 0.04 + audioFeatures.bass * 0.06;
-                this.orbitPunchX = (Math.random() - 0.5) * punchIntensity;
-                this.orbitPunchY = (Math.random() - 0.5) * punchIntensity;
-                
-                // Zoom punch - push in on beat
-                this.zoomPunch = -15 * (0.5 + audioFeatures.bass * 0.5);
+                this.targetRotationMultiplier = 2.0 + (audioFeatures.bass * 1.0);
+            } else {
+                this.targetRotationMultiplier = 1.2 + (audioFeatures.overallVolume * 0.8);
             }
             
-            // Snare hits: add extra orbit punch
-            if (audioFeatures.snareHit) {
-                this.orbitPunchX += (Math.random() - 0.5) * 0.03;
-                this.orbitPunchY += (Math.random() - 0.5) * 0.03;
-                this.zoomPunch -= 8;
-            }
+            // Gradually transition current rotation speeds to targets
+            this.rotationSpeedX = THREE.MathUtils.lerp(this.rotationSpeedX, this.targetRotationSpeedX, delta * this.ROTATION_SPEED_LERP);
+            this.rotationSpeedY = THREE.MathUtils.lerp(this.rotationSpeedY, this.targetRotationSpeedY, delta * this.ROTATION_SPEED_LERP);
+            this.rotationSpeedZ = THREE.MathUtils.lerp(this.rotationSpeedZ, this.targetRotationSpeedZ, delta * this.ROTATION_SPEED_LERP);
             
-            // Audio-reactive zoom target (bass pulls in, quiet pushes out)
-            const audioZoom = 90 - (audioFeatures.bass * 30) + (audioFeatures.overallVolume * -10);
-            this.targetOrbitRadius = THREE.MathUtils.clamp(audioZoom, this.MIN_ORBIT_RADIUS, this.MAX_ORBIT_RADIUS);
+            // Smooth rotation multiplier changes
+            this.currentRotationMultiplier = THREE.MathUtils.lerp(this.currentRotationMultiplier, this.targetRotationMultiplier, delta * this.ROTATION_RAMP_SPEED);
             
-            // Velocity influenced by audio intensity
-            const intensityMultiplier = 1.0 + audioFeatures.overallVolume * 1.5 + audioFeatures.mid * 0.8;
-            
-            // Smooth velocity transitions
-            this.orbitVelocityX = THREE.MathUtils.lerp(this.orbitVelocityX, this.targetOrbitVelocityX * intensityMultiplier, delta * this.VELOCITY_LERP_SPEED);
-            this.orbitVelocityY = THREE.MathUtils.lerp(this.orbitVelocityY, this.targetOrbitVelocityY * intensityMultiplier, delta * this.VELOCITY_LERP_SPEED);
-            
-            // Update orbit angles
-            this.targetOrbitAngleX += this.orbitVelocityX * delta;
-            this.targetOrbitAngleY += this.orbitVelocityY * delta;
-            
-            // Clamp vertical angle to prevent flipping
-            this.targetOrbitAngleX = THREE.MathUtils.clamp(this.targetOrbitAngleX, -this.MAX_ORBIT_ANGLE_X, this.MAX_ORBIT_ANGLE_X);
+            // Apply smooth rotation to all 3 axes
+            this.scene.rotation.x += this.rotationSpeedX * this.currentRotationMultiplier * delta;
+            this.scene.rotation.y += this.rotationSpeedY * this.currentRotationMultiplier * delta;
+            this.scene.rotation.z += this.rotationSpeedZ * this.currentRotationMultiplier * delta;
             
         } else {
-            // No audio: gradually slow down and return to default position
-            this.targetOrbitVelocityX = THREE.MathUtils.lerp(this.targetOrbitVelocityX, 0, delta * this.VELOCITY_LERP_SPEED);
-            this.targetOrbitVelocityY = THREE.MathUtils.lerp(this.targetOrbitVelocityY, 0, delta * this.VELOCITY_LERP_SPEED);
-            this.orbitVelocityX = THREE.MathUtils.lerp(this.orbitVelocityX, 0, delta * this.VELOCITY_LERP_SPEED);
-            this.orbitVelocityY = THREE.MathUtils.lerp(this.orbitVelocityY, 0, delta * this.VELOCITY_LERP_SPEED);
-            this.targetOrbitRadius = THREE.MathUtils.lerp(this.targetOrbitRadius, 90, delta * this.ZOOM_LERP_SPEED * 0.5);
+            // No audio: gradually slow everything down to stop
+            this.targetRotationSpeedX = THREE.MathUtils.lerp(this.targetRotationSpeedX, 0, delta * this.ROTATION_SPEED_LERP);
+            this.targetRotationSpeedY = THREE.MathUtils.lerp(this.targetRotationSpeedY, 0, delta * this.ROTATION_SPEED_LERP);
+            this.targetRotationSpeedZ = THREE.MathUtils.lerp(this.targetRotationSpeedZ, 0, delta * this.ROTATION_SPEED_LERP);
+            
+            this.rotationSpeedX = THREE.MathUtils.lerp(this.rotationSpeedX, this.targetRotationSpeedX, delta * this.ROTATION_SPEED_LERP);
+            this.rotationSpeedY = THREE.MathUtils.lerp(this.rotationSpeedY, this.targetRotationSpeedY, delta * this.ROTATION_SPEED_LERP);
+            this.rotationSpeedZ = THREE.MathUtils.lerp(this.rotationSpeedZ, this.targetRotationSpeedZ, delta * this.ROTATION_SPEED_LERP);
+            
+            this.currentRotationMultiplier = THREE.MathUtils.lerp(this.currentRotationMultiplier, 0, delta * this.ROTATION_RAMP_SPEED);
+            
+            this.scene.rotation.x += this.rotationSpeedX * this.currentRotationMultiplier * delta;
+            this.scene.rotation.y += this.rotationSpeedY * this.currentRotationMultiplier * delta;
+            this.scene.rotation.z += this.rotationSpeedZ * this.currentRotationMultiplier * delta;
         }
-        
-        // Decay punches
-        this.orbitPunchX = THREE.MathUtils.lerp(this.orbitPunchX, 0, delta * this.PUNCH_DECAY);
-        this.orbitPunchY = THREE.MathUtils.lerp(this.orbitPunchY, 0, delta * this.PUNCH_DECAY);
-        this.zoomPunch = THREE.MathUtils.lerp(this.zoomPunch, 0, delta * this.PUNCH_DECAY);
-        
-        // Smooth interpolation to target angles
-        this.cameraOrbitAngleX = THREE.MathUtils.lerp(this.cameraOrbitAngleX, this.targetOrbitAngleX + this.orbitPunchX, delta * this.ORBIT_LERP_SPEED);
-        this.cameraOrbitAngleY = THREE.MathUtils.lerp(this.cameraOrbitAngleY, this.targetOrbitAngleY + this.orbitPunchY, delta * this.ORBIT_LERP_SPEED);
-        this.cameraOrbitRadius = THREE.MathUtils.lerp(this.cameraOrbitRadius, this.targetOrbitRadius + this.zoomPunch, delta * this.ZOOM_LERP_SPEED);
-        
-        // Clamp radius
-        this.cameraOrbitRadius = THREE.MathUtils.clamp(this.cameraOrbitRadius, this.MIN_ORBIT_RADIUS, this.MAX_ORBIT_RADIUS);
-        
-        // Calculate camera position on sphere around target
-        const x = this.cameraLookTarget.x + this.cameraOrbitRadius * Math.sin(this.cameraOrbitAngleY) * Math.cos(this.cameraOrbitAngleX);
-        const y = this.cameraLookTarget.y + this.cameraOrbitRadius * Math.sin(this.cameraOrbitAngleX);
-        const z = this.cameraLookTarget.z + this.cameraOrbitRadius * Math.cos(this.cameraOrbitAngleY) * Math.cos(this.cameraOrbitAngleX);
-        
-        // Apply camera position and look at sigil center
-        this.camera.position.set(x, y, z);
-        this.camera.lookAt(this.cameraLookTarget);
     }
 
     updatePostProcessing(audioFeatures) {
@@ -494,8 +406,8 @@ class CybersigilApp {
                 sigilInstance.update(delta, this.isInteracting, audioFeatures);
             }
 
-            // Update camera movement (orbit around sigil)
-            this.updateCameraMovement(audioFeatures, delta, currentTime);
+            // Update rotation
+            this.updateRotation(audioFeatures, delta, currentTime);
 
             // Update post-processing
             this.updatePostProcessing(audioFeatures);
