@@ -1,6 +1,6 @@
 /* Reset and base styles */
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: Arial, Helvetica, sans-serif; }
 
 /* Background container */
 #background-container { 
@@ -8,147 +8,152 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-f
     background-size: cover; background-position: center center; 
 }
 
-/* Main HUD - responsive */
-#hud { 
-    position: fixed; top: 10px; left: 10px; 
-    font-size: 11px; color: #eee; z-index: 10;
-    background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px;
-    max-width: calc(100vw - 20px);
+/* Shortcuts section in panel */
+#shortcuts-section {
+    display: flex; flex-wrap: wrap; gap: 6px;
+}
+.shortcut-item {
+    font-size: 9px; color: #666;
+    display: flex; align-items: center; gap: 4px;
+}
+.shortcut-item .key {
+    background: #333; color: #aaa; padding: 2px 6px;
+    border-radius: 3px; font-size: 8px; font-weight: bold;
+    border: 1px solid #444;
 }
 
-/* Control panels container */
-.controls-container {
-    position: fixed; top: 10px; right: 10px; z-index: 10;
-    display: flex; flex-direction: column; gap: 8px;
-    max-width: calc(100vw - 20px);
+/* UI Toggle Button */
+#ui-toggle, #immersive-toggle {
+    position: fixed; top: 10px; z-index: 100;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(0,0,0,0.8); color: #fff; border: 1px solid #444;
+    font-size: 16px; cursor: pointer; transition: all 0.2s;
+}
+#ui-toggle { right: 10px; }
+#immersive-toggle { right: 52px; font-size: 14px; }
+#ui-toggle:hover, #immersive-toggle:hover { background: #333; border-color: #666; }
+#ui-toggle.active, #immersive-toggle.active { background: #fff; color: #000; }
+
+/* Immersive mode */
+body.immersive { cursor: none; }
+body.immersive #ui-toggle,
+body.immersive #immersive-toggle,
+body.immersive #control-panel {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+body.immersive:hover #immersive-toggle {
+    opacity: 0.3;
+    pointer-events: auto;
+}
+body.immersive:hover #immersive-toggle:hover {
+    opacity: 1;
 }
 
-/* Mirror controls */
-#mirror-controls {
-    background: rgba(0,0,0,0.8); padding: 8px; border-radius: 4px;
-    display: flex; flex-wrap: wrap; gap: 4px;
+/* Unified Control Panel */
+#control-panel {
+    position: fixed; top: 50px; right: 10px; z-index: 10;
+    background: rgba(0,0,0,0.9); border-radius: 8px;
+    width: 220px; max-height: calc(100vh - 70px);
+    overflow-y: auto; transition: all 0.3s ease;
 }
-#mirror-controls button {
-    font-size: 10px; background: #333; color: #fff; border: 1px solid #555;
-    padding: 6px 8px; border-radius: 3px; cursor: pointer; transition: all 0.2s;
-    white-space: nowrap;
-}
-#mirror-controls button:hover { background: #444; border-color: #666; }
-#mirror-controls button.active { background: #fff; color: #000; border-color: #ccc; }
-
-/* Audio controls */
-#audio-controls {
-    background: rgba(0,0,0,0.8); padding: 8px; border-radius: 4px;
-    display: flex; flex-direction: column; gap: 6px;
-    min-width: 280px; /* Ensure minimum width for audio player */
-}
-#audio-controls button {
-    font-size: 10px; background: #333; color: #fff; border: 1px solid #555;
-    padding: 6px 8px; border-radius: 3px; cursor: pointer; transition: all 0.2s;
-}
-#audio-controls button:hover { background: #444; border-color: #666; }
-#audio-controls button.active { background: #fff; color: #000; border-color: #ccc; }
-#audio-controls input[type="file"] { 
-    font-size: 9px; color: #ccc; background: #333; border: 1px solid #555;
-    padding: 4px; border-radius: 3px; width: 100%;
-}
-#audio-controls audio { 
-    width: 100%; 
-    min-width: 260px; 
-    height: 40px; /* Increase height for better touch interaction */
+#control-panel.hidden {
+    transform: translateX(240px);
+    opacity: 0;
+    pointer-events: none;
 }
 
-/* Effects panel - collapsible on mobile */
-#effects-panel {
-    position: fixed; bottom: 10px; left: 10px; z-index: 10;
-    background: rgba(0,0,0,0.9); border-radius: 4px; overflow: hidden;
-    max-width: calc(100vw - 20px); transition: all 0.3s ease;
+/* Panel Sections */
+.panel-section {
+    padding: 10px;
+    border-bottom: 1px solid #333;
+}
+.panel-section:last-child { border-bottom: none; }
+
+.section-title {
+    font-size: 9px; color: #666; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 8px;
 }
 
-#effects-header {
-    background: #333; color: #fff; padding: 8px 12px; cursor: pointer;
-    font-size: 11px; display: flex; justify-content: space-between; align-items: center;
+/* Button Row */
+.button-row {
+    display: flex; gap: 4px; flex-wrap: wrap;
 }
-#effects-header:hover { background: #444; }
-
-#effects-content {
-    padding: 8px; display: grid; gap: 6px; grid-template-columns: 1fr;
-    max-height: 40vh; overflow-y: auto;
+.button-row button {
+    flex: 1; min-width: 40px;
 }
-#effects-content.collapsed { display: none; }
 
+/* Buttons */
+#control-panel button {
+    font-size: 10px; background: #222; color: #ccc; border: 1px solid #444;
+    padding: 6px 8px; border-radius: 4px; cursor: pointer; transition: all 0.2s;
+    width: 100%; margin-bottom: 6px;
+}
+#control-panel button:hover { background: #333; border-color: #555; }
+#control-panel button.active { background: #fff; color: #000; border-color: #fff; }
+
+.button-row button { margin-bottom: 0; }
+
+/* File inputs */
+#control-panel input[type="file"] {
+    font-size: 9px; color: #888; background: #1a1a1a; border: 1px solid #333;
+    padding: 6px; border-radius: 4px; width: 100%; margin-bottom: 6px;
+}
+
+/* Audio player */
+#control-panel audio {
+    width: 100%; height: 36px; border-radius: 4px;
+}
+
+/* Control groups (sliders) */
 .control-group {
-    display: flex; align-items: center; gap: 8px; font-size: 10px; color: #ccc;
+    display: flex; align-items: center; gap: 8px; 
+    font-size: 10px; color: #888; margin-bottom: 6px;
 }
-.control-group label { min-width: 80px; flex-shrink: 0; }
+.control-group:last-child { margin-bottom: 0; }
+.control-group label { 
+    min-width: 60px; flex-shrink: 0; font-size: 9px;
+}
 .control-group input[type="range"] { 
-    flex: 1; min-width: 100px; height: 20px; background: #333;
-    -webkit-appearance: none; border-radius: 10px;
+    flex: 1; height: 4px; background: #333;
+    -webkit-appearance: none; border-radius: 2px;
 }
 .control-group input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
-    background: #fff; cursor: pointer; border: 2px solid #000;
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: #fff; cursor: pointer;
 }
-.control-group input[type="checkbox"] { width: 16px; height: 16px; }
-.control-group input[type="file"] {
-    font-size: 9px; flex: 1; background: #333; color: #ccc; border: 1px solid #555;
-    padding: 2px 4px; border-radius: 3px;
+.control-group input[type="checkbox"] { 
+    width: 14px; height: 14px; accent-color: #fff;
 }
+
+/* Scrollbar styling */
+#control-panel::-webkit-scrollbar { width: 4px; }
+#control-panel::-webkit-scrollbar-track { background: transparent; }
+#control-panel::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
 
 /* Mobile responsive */
 @media (max-width: 768px) {
-    #hud { font-size: 10px; padding: 6px 8px; }
-    
-    .controls-container { 
-        position: fixed; top: auto; bottom: 60px; right: 10px; left: 10px;
-        flex-direction: row; justify-content: space-between;
-    }
-    
-    #mirror-controls, #audio-controls { 
-        flex: 1; max-width: 48%; 
-    }
-    #audio-controls {
-        min-width: 45%; /* Ensure audio controls don't get too small on mobile */
-    }
-    #audio-controls audio {
-        min-width: 100%; /* Full width on mobile */
-        height: 44px; /* Larger touch target on mobile */
-    }
-    #mirror-controls button, #audio-controls button { font-size: 9px; padding: 4px 6px; }
-    
-    #effects-panel { 
-        bottom: 0; left: 0; right: 0; border-radius: 8px 8px 0 0;
+    #control-panel {
+        width: calc(100vw - 20px); right: 10px; left: 10px;
         max-height: 50vh;
     }
-    #effects-content { max-height: 35vh; }
-    .control-group { flex-wrap: wrap; }
-    .control-group label { min-width: 60px; font-size: 9px; }
+    #control-panel.hidden {
+        transform: translateY(-100%);
+    }
+    
+    .control-group label { min-width: 50px; }
 }
 
 @media (max-width: 480px) {
-    #hud { font-size: 9px; }
-    .controls-container { flex-direction: column; gap: 4px; }
-    #mirror-controls, #audio-controls { max-width: 100%; }
-    #audio-controls {
-        min-width: 100%;
-    }
-    #audio-controls audio {
-        min-width: 100%;
-        height: 48px; /* Even larger on very small screens */
-    }
-    .control-group label { min-width: 50px; }
-    #effects-content { grid-template-columns: 1fr; }
+    #control-panel { top: 50px; }
 }
 
 /* Touch-friendly improvements */
 @media (hover: none) and (pointer: coarse) {
-    button, input { min-height: 44px; }
-    .control-group input[type="range"] { height: 30px; }
+    #ui-toggle { width: 44px; height: 44px; font-size: 20px; }
+    #control-panel button { min-height: 40px; }
+    .control-group input[type="range"] { height: 8px; }
     .control-group input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; }
-    
-    /* Make audio controls extra touch-friendly */
-    #audio-controls audio {
-        height: 50px !important; /* Force larger size on touch devices */
-        min-height: 50px;
-    }
-} 
+    #control-panel audio { height: 44px; }
+}

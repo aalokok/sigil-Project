@@ -10,33 +10,80 @@ export class UIManager {
         this.mirrorYActive = false;
         this.mirrorZActive = false;
         
-        this.effectsPanelOpen = true;
+        this.uiVisible = true;
+        this.immersiveMode = false;
         this.setupEventListeners();
     }
 
     setupEventListeners() {
-        this.setupEffectsPanel();
+        this.setupUIToggle();
+        this.setupImmersiveMode();
         this.setupMirrorControls();
         this.setupAudioControls();
         this.setupEffectControls();
         this.setupKeyboardControls();
     }
 
-    setupEffectsPanel() {
-        const effectsHeader = document.getElementById('effects-header');
-        const effectsContent = document.getElementById('effects-content');
-        const effectsToggle = document.getElementById('effects-toggle');
+    setupUIToggle() {
+        const uiToggle = document.getElementById('ui-toggle');
+        const controlPanel = document.getElementById('control-panel');
 
-        effectsHeader.addEventListener('click', () => {
-            this.effectsPanelOpen = !this.effectsPanelOpen;
-            if (this.effectsPanelOpen) {
-                effectsContent.classList.remove('collapsed');
-                effectsToggle.textContent = '▲';
+        uiToggle.addEventListener('click', () => {
+            this.uiVisible = !this.uiVisible;
+            if (this.uiVisible) {
+                controlPanel.classList.remove('hidden');
+                uiToggle.classList.remove('active');
             } else {
-                effectsContent.classList.add('collapsed');
-                effectsToggle.textContent = '▼';
+                controlPanel.classList.add('hidden');
+                uiToggle.classList.add('active');
             }
         });
+    }
+
+    setupImmersiveMode() {
+        const immersiveToggle = document.getElementById('immersive-toggle');
+
+        immersiveToggle.addEventListener('click', () => {
+            this.toggleImmersiveMode();
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement && this.immersiveMode) {
+                this.exitImmersiveMode();
+            }
+        });
+    }
+
+    toggleImmersiveMode() {
+        if (this.immersiveMode) {
+            this.exitImmersiveMode();
+        } else {
+            this.enterImmersiveMode();
+        }
+    }
+
+    enterImmersiveMode() {
+        this.immersiveMode = true;
+        document.body.classList.add('immersive');
+        document.getElementById('immersive-toggle').classList.add('active');
+        
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn('Fullscreen request failed:', err);
+            });
+        }
+    }
+
+    exitImmersiveMode() {
+        this.immersiveMode = false;
+        document.body.classList.remove('immersive');
+        document.getElementById('immersive-toggle').classList.remove('active');
+        
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(err => {
+                console.warn('Exit fullscreen failed:', err);
+            });
+        }
     }
 
     setupMirrorControls() {
@@ -91,10 +138,11 @@ export class UIManager {
         const audioPlayer = document.getElementById('audioPlayer');
 
         // Microphone toggle
-        micToggleBtn.addEventListener('click', () => {
+        micToggleBtn.addEventListener('click', async () => {
             if (this.audioManager.isMicActive) {
+                // Turn OFF mic
                 this.audioManager.stopMicrophone();
-                micToggleBtn.textContent = '🎤 Microphone';
+                micToggleBtn.textContent = '🎤 Mic';
                 micToggleBtn.classList.remove('active');
                 
                 // Reconnect file audio if available
@@ -109,6 +157,7 @@ export class UIManager {
                     }
                 }
             } else {
+                // Turn ON mic
                 // Disconnect file audio first
                 if (this.audioManager.audioSourceNode) {
                     try {
@@ -125,11 +174,11 @@ export class UIManager {
                     }
                 }
                 
-                this.audioManager.setupMicrophone();
-                micToggleBtn.textContent = '🎤 Microphone';
+                await this.audioManager.setupMicrophone();
+                this.audioManager.isMicActive = true;
+                micToggleBtn.textContent = '🎤 Mic';
                 micToggleBtn.classList.add('active');
             }
-            this.audioManager.isMicActive = !this.audioManager.isMicActive;
         });
 
         // Audio file upload
@@ -168,6 +217,8 @@ export class UIManager {
         console.log("Creating new audio element...");
         
         const oldAudio = document.getElementById('audioPlayer');
+        const parentElement = oldAudio ? oldAudio.parentElement : document.getElementById('control-panel');
+        
         if (oldAudio) {
             oldAudio.remove();
         }
@@ -178,8 +229,7 @@ export class UIManager {
         newAudio.loop = true;
         newAudio.src = src;
         
-        const audioControls = document.getElementById('audio-controls');
-        audioControls.appendChild(newAudio);
+        parentElement.appendChild(newAudio);
         
         window.audioPlayer = newAudio;
         return newAudio;
@@ -255,6 +305,11 @@ export class UIManager {
             } else if (e.code === 'KeyR') {
                 e.preventDefault();
                 this.sigilManager.resetSigil(this.mirrorXActive, this.mirrorYActive, this.mirrorZActive);
+            } else if (e.code === 'KeyF') {
+                e.preventDefault();
+                this.toggleImmersiveMode();
+            } else if (e.code === 'Escape' && this.immersiveMode) {
+                this.exitImmersiveMode();
             }
         });
     }

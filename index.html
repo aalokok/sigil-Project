@@ -8,64 +8,68 @@
 <body>
   <div id="background-container"></div>
   
-  <!-- Main HUD -->
-  <div id="hud">SPACE → add branch · R → reset</div>
+  <!-- Hide/Show UI Button -->
+  <button id="ui-toggle">☰</button>
+  <button id="immersive-toggle" title="Immersive Mode (F)">⛶</button>
   
-  <!-- Control panels container -->
-  <div class="controls-container">
-    <!-- Mirror controls -->
-    <div id="mirror-controls">
-      <button id="mirrorXBtn">Mirror X</button>
-      <button id="mirrorYBtn">Mirror Y</button>
-      <button id="mirrorZBtn">Mirror Z</button>
-      <button id="invertColorsBtn">Invert</button>
+  <!-- Unified Control Panel -->
+  <div id="control-panel">
+    <div class="panel-section" id="shortcuts-section">
+      <div class="shortcut-item"><span class="key">SPACE</span> Add branch</div>
+      <div class="shortcut-item"><span class="key">R</span> Reset</div>
+      <div class="shortcut-item"><span class="key">F</span> Immersive</div>
+      <div class="shortcut-item"><span class="key">DRAG</span> Orbit</div>
     </div>
     
-    <!-- Audio controls -->
-    <div id="audio-controls">
-      <button id="micToggle">🎤 Microphone</button>
+    <div class="panel-section">
+      <div class="section-title">Mirror</div>
+      <div class="button-row">
+        <button id="mirrorXBtn">X</button>
+        <button id="mirrorYBtn">Y</button>
+        <button id="mirrorZBtn">Z</button>
+        <button id="invertColorsBtn">Invert</button>
+      </div>
+    </div>
+    
+    <div class="panel-section">
+      <div class="section-title">Audio</div>
+      <button id="micToggle">🎤 Mic</button>
       <input type="file" id="audioUpload" accept="audio/mpeg" placeholder="Upload MP3">
       <audio id="audioPlayer" controls loop></audio>
     </div>
-  </div>
-  
-  <!-- Effects panel (collapsible) -->
-  <div id="effects-panel">
-    <div id="effects-header">
-      <span>Effects Controls</span>
-      <span id="effects-toggle">▲</span>
-    </div>
-    <div id="effects-content">
+    
+    <div class="panel-section">
+      <div class="section-title">Effects</div>
       <div class="control-group">
-        <label for="micGain">Mic Gain:</label>
-        <input type="range" id="micGain" min="0.1" max="5.0" step="0.1" value="1.0">
+        <label for="micGain">Mic Gain</label>
+        <input type="range" id="micGain" min="0.1" max="10.0" step="0.1" value="1.0">
       </div>
       <div class="control-group">
-        <label for="noiseAmount">Noise:</label>
+        <label for="noiseAmount">Noise</label>
         <input type="range" id="noiseAmount" min="0" max="0.2" step="0.001" value="0.03">
       </div>
       <div class="control-group">
-        <label for="bloomStrength">Bloom:</label>
+        <label for="bloomStrength">Bloom</label>
         <input type="range" id="bloomStrength" min="0" max="3" step="0.1" value="1.5">
       </div>
       <div class="control-group">
-        <label for="bloomRadius">B.Radius:</label>
+        <label for="bloomRadius">B.Radius</label>
         <input type="range" id="bloomRadius" min="0" max="1" step="0.01" value="0.4">
       </div>
       <div class="control-group">
-        <label for="bloomThreshold">B.Threshold:</label>
+        <label for="bloomThreshold">B.Thresh</label>
         <input type="range" id="bloomThreshold" min="0" max="1" step="0.01" value="0.85">
       </div>
       <div class="control-group">
-        <label for="thresholdStrength">Threshold:</label>
+        <label for="thresholdStrength">Threshold</label>
         <input type="range" id="thresholdStrength" min="0" max="1" step="0.01" value="0.5">
       </div>
       <div class="control-group">
-        <label for="inverseThreshold">Inverse:</label>
+        <label for="inverseThreshold">Inverse</label>
         <input type="checkbox" id="inverseThreshold" checked>
       </div>
       <div class="control-group">
-        <label for="imageUpload">Image:</label>
+        <label for="imageUpload">Image</label>
         <input type="file" id="imageUpload" accept="image/png, image/jpeg">
       </div>
     </div>

@@ -29,8 +29,8 @@ class CybersigilApp {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x000000);
         
-        this.camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, .1, 1000);
-        this.camera.position.set(0, 14, 90);
+        this.camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, .1, 1000);
+        this.camera.position.set(0, 0, 15);
 
         this.renderer = new THREE.WebGLRenderer({antialias:true, alpha: true});
         this.renderer.setClearAlpha(0.0);
@@ -41,6 +41,8 @@ class CybersigilApp {
         // Controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.08;
+        this.controls.target.set(0, 0, 0);
         this.isInteracting = false;
 
         this.controls.addEventListener('start', () => { this.isInteracting = true; });
@@ -169,18 +171,30 @@ class CybersigilApp {
     }
 
     initializeRotation() {
-        // Scene rotation variables
-        this.rotationSpeedX = (Math.random() - 0.5) * 0.2;
-        this.rotationSpeedY = (Math.random() - 0.5) * 0.2;
-        this.rotationSpeedZ = (Math.random() - 0.5) * 0.2;
-        this.targetRotationSpeedX = this.rotationSpeedX;
-        this.targetRotationSpeedY = this.rotationSpeedY;
-        this.targetRotationSpeedZ = this.rotationSpeedZ;
-        this.currentRotationMultiplier = 1.0;
-        this.targetRotationMultiplier = 1.0;
-        this.lastBeatRotationUpdate = 0;
-        this.ROTATION_RAMP_SPEED = 1.8;
-        this.ROTATION_SPEED_LERP = 1.2;
+        // Camera orbit around sigil
+        this.sigilCenter = new THREE.Vector3(0, 0, 0);
+        this.cameraOrbitRadius = 20;
+        this.cameraOrbitAngleX = 0;
+        this.cameraOrbitAngleY = 0;
+        this.cameraOrbitAngleZ = 0;
+        
+        // Target velocities for responsive movement
+        this.orbitVelocityX = 0;
+        this.orbitVelocityY = 0;
+        this.orbitVelocityZ = 0;
+        this.targetOrbitVelocityX = 0;
+        this.targetOrbitVelocityY = 0;
+        this.targetOrbitVelocityZ = 0;
+        
+        // Zoom (distance from sigil)
+        this.targetOrbitRadius = 20;
+        this.minOrbitRadius = 5;
+        this.maxOrbitRadius = 35;
+        
+        // Timing
+        this.lastBeatCameraUpdate = 0;
+        this.CAMERA_RESPONSE_SPEED = 3.0;
+        this.CAMERA_VELOCITY_DECAY = 1.5;
     }
 
     initializeBackground() {
@@ -259,7 +273,7 @@ class CybersigilApp {
         });
         this.allSigils.length = 0;
 
-        const rootInitialGroupPos = new THREE.Vector3(0,0,-10);
+        const rootInitialGroupPos = new THREE.Vector3(0,0,0);
         const primaryRootDir = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
         if (primaryRootDir.lengthSq() === 0) primaryRootDir.set(0,0,1);
         const primaryRootSeed = Math.random() * 1000;
@@ -269,51 +283,62 @@ class CybersigilApp {
         console.log(`RESETsigil: Created new Cybersigil. Total sigils: ${this.allSigils.length}, Position: ${rootInitialGroupPos.x.toFixed(1)}, ${rootInitialGroupPos.y.toFixed(1)}, ${rootInitialGroupPos.z.toFixed(1)}`);
     }
 
-    updateRotation(audioFeatures, delta, currentTime) {
-        if (this.audioManager.isAudioSetup && (this.audioManager.isMicActive || (window.audioPlayer && !window.audioPlayer.paused))) {
-            // Update target rotation speeds on beats
-            if (audioFeatures.beat) {
-                if (currentTime - this.lastBeatRotationUpdate > 1.5) {
-                    this.targetRotationSpeedX = (Math.random() - 0.5) * 0.3;
-                    this.targetRotationSpeedY = (Math.random() - 0.5) * 0.3;
-                    this.targetRotationSpeedZ = (Math.random() - 0.5) * 0.3;
-                    this.lastBeatRotationUpdate = currentTime;
-                    console.log(`Beat: New target speeds X:${this.targetRotationSpeedX.toFixed(3)}, Y:${this.targetRotationSpeedY.toFixed(3)}, Z:${this.targetRotationSpeedZ.toFixed(3)}`);
-                }
-                this.targetRotationMultiplier = 2.0 + (audioFeatures.bass * 1.0);
-            } else {
-                this.targetRotationMultiplier = 1.2 + (audioFeatures.overallVolume * 0.8);
+    updateCameraMovement(audioFeatures, delta, currentTime) {
+        if (this.isInteracting) return; // Don't override manual control
+        
+        const hasAudio = this.audioManager.isAudioSetup && (this.audioManager.isMicActive || (window.audioPlayer && !window.audioPlayer.paused));
+        
+        if (hasAudio) {
+            // On beat: change direction (balanced - not too sudden)
+            if (audioFeatures.beat && currentTime - this.lastBeatCameraUpdate > 0.5) {
+                // Blend toward new velocity (not instant snap)
+                this.targetOrbitVelocityX = (Math.random() - 0.5) * 1.2;
+                this.targetOrbitVelocityY = (Math.random() - 0.5) * 1.2;
+                this.targetOrbitVelocityZ = (Math.random() - 0.5) * 0.6;
+                this.lastBeatCameraUpdate = currentTime;
+                
+                // Subtle zoom variation on beat
+                this.targetOrbitRadius = THREE.MathUtils.lerp(this.cameraOrbitRadius, 
+                    this.minOrbitRadius + Math.random() * (this.maxOrbitRadius - this.minOrbitRadius), 0.3);
             }
             
-            // Gradually transition current rotation speeds to targets
-            this.rotationSpeedX = THREE.MathUtils.lerp(this.rotationSpeedX, this.targetRotationSpeedX, delta * this.ROTATION_SPEED_LERP);
-            this.rotationSpeedY = THREE.MathUtils.lerp(this.rotationSpeedY, this.targetRotationSpeedY, delta * this.ROTATION_SPEED_LERP);
-            this.rotationSpeedZ = THREE.MathUtils.lerp(this.rotationSpeedZ, this.targetRotationSpeedZ, delta * this.ROTATION_SPEED_LERP);
+            // Audio magnitude affects speed (gentler)
+            const audioIntensity = 1.0 + audioFeatures.overallVolume * 1.5 + audioFeatures.bass * 1.0;
             
-            // Smooth rotation multiplier changes
-            this.currentRotationMultiplier = THREE.MathUtils.lerp(this.currentRotationMultiplier, this.targetRotationMultiplier, delta * this.ROTATION_RAMP_SPEED);
+            // Smooth transition to target velocities
+            this.orbitVelocityX = THREE.MathUtils.lerp(this.orbitVelocityX, this.targetOrbitVelocityX * audioIntensity, delta * this.CAMERA_RESPONSE_SPEED);
+            this.orbitVelocityY = THREE.MathUtils.lerp(this.orbitVelocityY, this.targetOrbitVelocityY * audioIntensity, delta * this.CAMERA_RESPONSE_SPEED);
+            this.orbitVelocityZ = THREE.MathUtils.lerp(this.orbitVelocityZ, this.targetOrbitVelocityZ * audioIntensity, delta * this.CAMERA_RESPONSE_SPEED);
             
-            // Apply smooth rotation to all 3 axes
-            this.scene.rotation.x += this.rotationSpeedX * this.currentRotationMultiplier * delta;
-            this.scene.rotation.y += this.rotationSpeedY * this.currentRotationMultiplier * delta;
-            this.scene.rotation.z += this.rotationSpeedZ * this.currentRotationMultiplier * delta;
+            // Gentle zoom
+            this.cameraOrbitRadius = THREE.MathUtils.lerp(this.cameraOrbitRadius, this.targetOrbitRadius, delta * 1.5);
             
         } else {
-            // No audio: gradually slow everything down to stop
-            this.targetRotationSpeedX = THREE.MathUtils.lerp(this.targetRotationSpeedX, 0, delta * this.ROTATION_SPEED_LERP);
-            this.targetRotationSpeedY = THREE.MathUtils.lerp(this.targetRotationSpeedY, 0, delta * this.ROTATION_SPEED_LERP);
-            this.targetRotationSpeedZ = THREE.MathUtils.lerp(this.targetRotationSpeedZ, 0, delta * this.ROTATION_SPEED_LERP);
-            
-            this.rotationSpeedX = THREE.MathUtils.lerp(this.rotationSpeedX, this.targetRotationSpeedX, delta * this.ROTATION_SPEED_LERP);
-            this.rotationSpeedY = THREE.MathUtils.lerp(this.rotationSpeedY, this.targetRotationSpeedY, delta * this.ROTATION_SPEED_LERP);
-            this.rotationSpeedZ = THREE.MathUtils.lerp(this.rotationSpeedZ, this.targetRotationSpeedZ, delta * this.ROTATION_SPEED_LERP);
-            
-            this.currentRotationMultiplier = THREE.MathUtils.lerp(this.currentRotationMultiplier, 0, delta * this.ROTATION_RAMP_SPEED);
-            
-            this.scene.rotation.x += this.rotationSpeedX * this.currentRotationMultiplier * delta;
-            this.scene.rotation.y += this.rotationSpeedY * this.currentRotationMultiplier * delta;
-            this.scene.rotation.z += this.rotationSpeedZ * this.currentRotationMultiplier * delta;
+            // No audio: decay velocities
+            this.orbitVelocityX = THREE.MathUtils.lerp(this.orbitVelocityX, 0, delta * this.CAMERA_VELOCITY_DECAY);
+            this.orbitVelocityY = THREE.MathUtils.lerp(this.orbitVelocityY, 0, delta * this.CAMERA_VELOCITY_DECAY);
+            this.orbitVelocityZ = THREE.MathUtils.lerp(this.orbitVelocityZ, 0, delta * this.CAMERA_VELOCITY_DECAY);
+            this.targetOrbitRadius = 20;
+            this.cameraOrbitRadius = THREE.MathUtils.lerp(this.cameraOrbitRadius, this.targetOrbitRadius, delta * 2.0);
         }
+        
+        // Apply velocities to orbit angles
+        this.cameraOrbitAngleX += this.orbitVelocityX * delta;
+        this.cameraOrbitAngleY += this.orbitVelocityY * delta;
+        this.cameraOrbitAngleZ += this.orbitVelocityZ * delta;
+        
+        // Calculate camera position orbiting around sigil center
+        const x = this.sigilCenter.x + Math.sin(this.cameraOrbitAngleY) * Math.cos(this.cameraOrbitAngleX) * this.cameraOrbitRadius;
+        const y = this.sigilCenter.y + Math.sin(this.cameraOrbitAngleX) * this.cameraOrbitRadius * 0.5;
+        const z = this.sigilCenter.z + Math.cos(this.cameraOrbitAngleY) * Math.cos(this.cameraOrbitAngleX) * this.cameraOrbitRadius;
+        
+        // Apply roll (z-axis rotation) for more dynamic feel
+        this.camera.position.set(x, y, z);
+        this.camera.lookAt(this.sigilCenter);
+        this.camera.rotation.z = Math.sin(this.cameraOrbitAngleZ) * 0.15;
+        
+        // Update controls target to sigil center
+        this.controls.target.copy(this.sigilCenter);
     }
 
     updatePostProcessing(audioFeatures) {
@@ -406,8 +431,8 @@ class CybersigilApp {
                 sigilInstance.update(delta, this.isInteracting, audioFeatures);
             }
 
-            // Update rotation
-            this.updateRotation(audioFeatures, delta, currentTime);
+            // Update camera movement
+            this.updateCameraMovement(audioFeatures, delta, currentTime);
 
             // Update post-processing
             this.updatePostProcessing(audioFeatures);
