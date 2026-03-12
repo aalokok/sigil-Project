@@ -25,6 +25,9 @@ export class AudioManager {
         this.micGainNode = null;
         this.isMicActive = false;
         this.isMicSetup = false;
+        
+        // Microphone sensitivity boost (20% increase)
+        this.MIC_SENSITIVITY_BOOST = 1.2;
 
         // Enhanced frequency band definitions
         this.bassStartIndex = 0;
@@ -102,11 +105,11 @@ export class AudioManager {
             if (!this.analyserNode) {
                 this.analyserNode = this.audioContext.createAnalyser();
                 this.analyserNode.fftSize = 1024;
-                this.analyserNode.smoothingTimeConstant = 0.75;
                 this.audioDataArray = new Uint8Array(this.analyserNode.frequencyBinCount);
                 
                 this.calculateFrequencyBands();
             }
+            
             
             if (this.audioSourceNode) {
                 try {
@@ -249,6 +252,17 @@ export class AudioManager {
             audioFeatures.vocals = vocalCount > 0 ? (vocalSum / vocalCount) / 255 : 0;
             audioFeatures.snare = snareCount > 0 ? (snareSum / snareCount) / 255 : 0;
             audioFeatures.snareHigh = snareHighCount > 0 ? (snareHighSum / snareHighCount) / 255 : 0;
+            
+            // Apply sensitivity boost for microphone input
+            if (this.isMicActive) {
+                audioFeatures.bass = Math.min(1.0, audioFeatures.bass * this.MIC_SENSITIVITY_BOOST);
+                audioFeatures.mid = Math.min(1.0, audioFeatures.mid * this.MIC_SENSITIVITY_BOOST);
+                audioFeatures.treble = Math.min(1.0, audioFeatures.treble * this.MIC_SENSITIVITY_BOOST);
+                audioFeatures.vocals = Math.min(1.0, audioFeatures.vocals * this.MIC_SENSITIVITY_BOOST);
+                audioFeatures.snare = Math.min(1.0, audioFeatures.snare * this.MIC_SENSITIVITY_BOOST);
+                audioFeatures.snareHigh = Math.min(1.0, audioFeatures.snareHigh * this.MIC_SENSITIVITY_BOOST);
+                audioFeatures.overallVolume = Math.min(1.0, audioFeatures.overallVolume * this.MIC_SENSITIVITY_BOOST);
+            }
 
             // Debug audio levels
             if (Math.floor(currentTime * 60) % 60 === 0) {

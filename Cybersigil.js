@@ -10,7 +10,7 @@ export const simplex = new SimplexNoise();
 // Sigil/Branch Specific Constants
 export const SEG_PER_SECOND = 90; // This might be more of an animation loop concern, but tied to growth speed
 export const MAX_BRANCH_DEPTH = 4;
-export const BRANCHING_PROBABILITY = 0.015; // Used in main event handler, might need to be passed or re-evaluated
+export const BRANCHING_PROBABILITY = 0.003; // Used in main event handler, might need to be passed or re-evaluated
 export const NOISE_DISPLACEMENT_STRENGTH = 0.02;
 export const NOISE_DISPLACEMENT_SCALE = 0.4;
 export let currentBranchGrowthSpeed = 8.0; // Default, will be modulated
@@ -20,16 +20,22 @@ const MAX_GROWTH_SPEED = 20.0;
 // Dynamic Geometry Constants
 export const MAX_POINTS_PER_BRANCH_PATH = 150;
 
-// New constants for 3D tubes
-export const TUBE_SIDES = 6;
+// New constants for 3D tubes (grain-based)
+export const TUBE_SIDES = 8;
 export const TUBE_BASE_RADIUS = 0.25;
 export const TUBE_TAPER_POWER = 1.5;
 export const TUBE_DEPTH_SCALE_FACTOR = 0.75;
+
+// Particle/grain constants
+export const GRAINS_PER_RING = 6;
+export const GRAIN_SIZE = 0.04;
+export const GRAIN_SIZE_ATTENUATION = true;
 
 // New constants for interaction-based growth modification
 const INTERACTION_GROWTH_SPEED_MULTIPLIER = 0.2;
 
 export const MAX_VERTICES_PER_BRANCH_GEOMETRY = MAX_POINTS_PER_BRANCH_PATH * TUBE_SIDES * 6;
+export const MAX_GRAINS_PER_BRANCH = MAX_POINTS_PER_BRANCH_PATH * GRAINS_PER_RING * 2;
 
 // Branch Materials
 export const BRANCH_MATERIAL_CONFIG = {
@@ -71,7 +77,7 @@ export function getSideVector(tangent, outSideVec) {
 
 export function createBranch(startPos, direction, seed, depth){ 
     const SEG_POINTS = MAX_POINTS_PER_BRANCH_PATH;
-    const LEN  = (depth === 0) ? 15 : Math.max(3, 15 / (depth * 1.5)); 
+    const LEN  = (depth === 0) ? 25 : Math.max(5, 20 / (depth * 1.2)); 
     const curvePts  = [];
     for(let i=0;i<=SEG_POINTS;i++){
       const u=i/SEG_POINTS;
@@ -97,18 +103,40 @@ export function createBranch(startPos, direction, seed, depth){
     const curve = new THREE.CatmullRomCurve3(curvePts);
     const curveLength = curve.getLength();
 
-    const positionsArray = new Float32Array(MAX_VERTICES_PER_BRANCH_GEOMETRY * 3);
-    const normalsArray = new Float32Array(MAX_VERTICES_PER_BRANCH_GEOMETRY * 3);
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positionsArray, 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(normalsArray, 3).setUsage(THREE.DynamicDrawUsage));
+    // Grain/particle-based geometry
+    const grainPositionsArray = new Float32Array(MAX_GRAINS_PER_BRANCH * 3);
+    const grainColorsArray = new Float32Array(MAX_GRAINS_PER_BRANCH * 3);
+    const grainSizesArray = new Float32Array(MAX_GRAINS_PER_BRANCH);
     
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-        ...BRANCH_MATERIAL_CONFIG,
-        color: INITIAL_BRANCH_COLOR.clone()
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(grainPositionsArray, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('color', new THREE.BufferAttribute(grainColorsArray, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('size', new THREE.BufferAttribute(grainSizesArray, 1).setUsage(THREE.DynamicDrawUsage));
+    
+    // Generate electric blue or grey color for this branch
+    const colorChoice = Math.abs(seed) % 10;
+    let branchColor;
+    if (colorChoice < 6) {
+        // Electric blue variants
+        const blueIntensity = 0.7 + (Math.abs(seed) % 30) / 100;
+        branchColor = new THREE.Color(0.1, 0.4 + (Math.abs(seed) % 20) / 100, blueIntensity);
+    } else {
+        // Grey variants
+        const greyLevel = 0.5 + (Math.abs(seed) % 40) / 100;
+        branchColor = new THREE.Color(greyLevel, greyLevel, greyLevel * 1.1);
+    }
+    
+    const mesh = new THREE.Points(geometry, new THREE.PointsMaterial({
+        size: GRAIN_SIZE,
+        vertexColors: true,
+        transparent: true,
+        opacity: 1.0,
+        sizeAttenuation: GRAIN_SIZE_ATTENUATION,
+        blending: THREE.NormalBlending,
+        depthWrite: true
     }));
     geometry.setDrawRange(0, 0); 
-    mesh.renderOrder = 0; // Main branch renders first
+    mesh.renderOrder = 0;
     
     console.log(`CreateBranch (depth ${depth}, seed ${seed.toFixed(0)}): totalLength=${curveLength.toFixed(2)}, curvePoints.length=${curvePts.length}, MaxVertices=${MAX_VERTICES_PER_BRANCH_GEOMETRY}`);
 
@@ -119,22 +147,52 @@ export function createBranch(startPos, direction, seed, depth){
       currentLength: 0,
       totalLength: curveLength,
       drawnPathSegments: 0,
-      currentVertexCount: 0, 
+      currentVertexCount: 0,
+      currentGrainCount: 0,
       childrenSpawned: 0,
       seed,
-      depth
+      depth,
+      branchColor: branchColor
     };
 }
 
+// Update grain colors based on audio - no position changes
+export function animateGrains(branch, audioFeatures = { bass: 0, mid: 0, treble: 0, beat: false, overallVolume: 0 }) {
+    if (branch.currentGrainCount === 0) return;
+    
+    const audioMagnitude = (audioFeatures.bass + audioFeatures.mid + audioFeatures.treble) / 3;
+    if (audioMagnitude < 0.03) return;
+    
+    const grainColor = branch.branchColor.clone();
+    
+    // Intensify the color based on audio
+    const intensity = 1.0 + audioMagnitude * 2.0;
+    grainColor.r = Math.min(grainColor.r * intensity, 1.0);
+    grainColor.g = Math.min(grainColor.g * intensity * 1.2, 1.0);
+    grainColor.b = Math.min(grainColor.b * intensity * 1.5, 1.0);
+    
+    const colors = branch.mesh.geometry.attributes.color.array;
+    
+    for (let k = 0; k < branch.currentGrainCount; k++) {
+        const idx = k * 3;
+        colors[idx] = grainColor.r;
+        colors[idx + 1] = grainColor.g;
+        colors[idx + 2] = grainColor.b;
+    }
+    
+    branch.mesh.geometry.attributes.color.needsUpdate = true;
+}
+
 export function growStep(branch, delta, sigil, isInteracting = false, audioFeatures = { bass: 0, mid: 0, treble: 0, beat: false, overallVolume: 0 }){
-    if (branch.currentLength >= branch.totalLength && branch.drawnPathSegments >= (branch.curvePoints.length -1) ) {
+    const isGrowthComplete = branch.currentLength >= branch.totalLength && branch.drawnPathSegments >= (branch.curvePoints.length -1);
+    
+    if (isGrowthComplete) {
         return false; 
     }
    
-    let mainGeometryNeedsUpdate = false; 
+    let geometryNeedsUpdate = false; 
 
     // Modulate growth speed by audio
-    // Example: mid frequencies boost speed, overall volume gives a base modulation
     const audioSpeedFactor = 1.0 + (audioFeatures.mid * 1.5) + (audioFeatures.overallVolume * 0.5);
     currentBranchGrowthSpeed = THREE.MathUtils.clamp(
         currentBranchGrowthSpeed * audioSpeedFactor,
@@ -151,11 +209,23 @@ export function growStep(branch, delta, sigil, isInteracting = false, audioFeatu
     const targetSegmentsToDraw = Math.min(Math.floor((branch.currentLength / branch.totalLength) * totalPathSegments), totalPathSegments);
     const segmentsAlreadyDrawn = branch.drawnPathSegments;
 
+    // Use the branch's unique color (consistent for all grains in this tentacle)
+    const audioMagnitude = (audioFeatures.bass + audioFeatures.mid + audioFeatures.treble) / 3;
+    const grainColor = branch.branchColor.clone();
+    
+    // Intensify the color based on audio - make electric blue pop
+    if (audioMagnitude > 0.03) {
+        const intensity = 1.0 + audioMagnitude * 2.0;
+        grainColor.r = Math.min(grainColor.r * intensity, 1.0);
+        grainColor.g = Math.min(grainColor.g * intensity * 1.2, 1.0);
+        grainColor.b = Math.min(grainColor.b * intensity * 1.5, 1.0);
+    }
+
     if (targetSegmentsToDraw > segmentsAlreadyDrawn || (justReachedFullLength && segmentsAlreadyDrawn < totalPathSegments) ) {
-        const mainPositions = branch.mesh.geometry.attributes.position.array;
-        const mainNormals = branch.mesh.geometry.attributes.normal.array; 
-        let mainPositionAttributeOffset = branch.currentVertexCount * 3;
-        let mainNormalAttributeOffset = branch.currentVertexCount * 3;
+        const positions = branch.mesh.geometry.attributes.position.array;
+        const colors = branch.mesh.geometry.attributes.color.array;
+        const sizes = branch.mesh.geometry.attributes.size.array;
+        let grainOffset = branch.currentGrainCount;
 
         const loopEndSegments = justReachedFullLength ? Math.min(targetSegmentsToDraw + 1, totalPathSegments) : targetSegmentsToDraw;
 
@@ -165,7 +235,7 @@ export function growStep(branch, delta, sigil, isInteracting = false, audioFeatu
             const p1 = branch.curvePoints[i];
             const p2 = branch.curvePoints[i+1];
             if (!p1 || !p2) {
-                console.error("Error: p1 or p2 is undefined in growStep for tube segment", i, branch.curvePoints.length);
+                console.error("Error: p1 or p2 is undefined in growStep for grain segment", i, branch.curvePoints.length);
                 continue; 
             }
 
@@ -183,111 +253,79 @@ export function growStep(branch, delta, sigil, isInteracting = false, audioFeatu
             
             const depthScale = 1 / (1 + branch.depth * TUBE_DEPTH_SCALE_FACTOR);
 
-            const taperFactor1_main = Math.pow(1 - u1, TUBE_TAPER_POWER);
-            const effectiveRadius1_main = TUBE_BASE_RADIUS * taperFactor1_main * depthScale;
-            const taperFactor2_main = Math.pow(1 - u2, TUBE_TAPER_POWER);
-            const effectiveRadius2_main = TUBE_BASE_RADIUS * taperFactor2_main * depthScale;
+            const taperFactor1 = Math.pow(1 - u1, TUBE_TAPER_POWER);
+            const effectiveRadius1 = TUBE_BASE_RADIUS * taperFactor1 * depthScale;
+            const taperFactor2 = Math.pow(1 - u2, TUBE_TAPER_POWER);
+            const effectiveRadius2 = TUBE_BASE_RADIUS * taperFactor2 * depthScale;
 
-            // --- Audio Reactive Color --- 
-            if (branch.mesh && branch.mesh.material) {
-                const baseWhite = INITIAL_BRANCH_COLOR; // Start with white
-                const audioColorInfluence = new THREE.Color(
-                    THREE.MathUtils.clamp(audioFeatures.bass * 2.0, 0, 1),    // Bass influences Red
-                    THREE.MathUtils.clamp(audioFeatures.mid * 2.0, 0, 1),     // Mid influences Green
-                    THREE.MathUtils.clamp(audioFeatures.treble * 2.0, 0, 1)  // Treble influences Blue
-                );
-
-                // If there's significant audio, lerp from white towards the audio color.
-                // Otherwise, lerp back towards white.
-                let targetColor = new THREE.Color(0xffffff);
-                const audioMagnitude = (audioFeatures.bass + audioFeatures.mid + audioFeatures.treble) / 3;
-
-                if (audioMagnitude > 0.05) { // Threshold to apply color change
-                    // Mix white with audio color. Higher audioMagnitude means more audioColor.
-                    targetColor.lerpColors(baseWhite, audioColorInfluence, audioMagnitude * 2.5); // Stronger influence
-                } else {
-                    targetColor.copy(baseWhite); // Stay white or quickly return to white
-                }
-
-                if (branch.mesh.material.color) { 
-                     branch.mesh.material.color.lerp(targetColor, 0.15); // Lerp towards the target (either white or audio-influenced)
-                } else {
-                    branch.mesh.material.color = targetColor.clone(); 
-                }
-
-                // Audio-reactive emissive color and intensity
-                if (branch.mesh.material.emissive) { 
-                    const emissiveTargetColor = new THREE.Color();
-                    const overallBrightness = THREE.MathUtils.clamp(audioFeatures.overallVolume * 2.0, 0.1, 1.0); // Increased brightness impact
-                    
-                    // Emissive color is also influenced by audio frequencies but can be brighter
-                    emissiveTargetColor.setRGB(
-                        THREE.MathUtils.clamp(audioFeatures.treble * 3.0 * overallBrightness, 0, 1), 
-                        THREE.MathUtils.clamp(audioFeatures.mid * 2.0 * overallBrightness, 0, 1),    
-                        THREE.MathUtils.clamp(audioFeatures.bass * 2.5 * overallBrightness, 0, 1)     
-                    );
-                    branch.mesh.material.emissive.lerp(emissiveTargetColor, 0.3); // Faster lerp for emissive
-
-                    // Audio-reactive emissive intensity
-                    const baseEmissiveIntensity = BRANCH_MATERIAL_CONFIG.emissiveIntensity || 1.0;
-                    const intensityPulse = audioFeatures.overallVolume * 1.5; // Stronger pulse effect
-                    branch.mesh.material.emissiveIntensity = THREE.MathUtils.clamp(baseEmissiveIntensity + intensityPulse, 0.5, 2.0); // Adjusted clamp range, removed beat boost
-                }
+            // Place grains around the tube circumference at both ring positions
+            for (let j = 0; j < GRAINS_PER_RING; j++) {
+                if (grainOffset >= MAX_GRAINS_PER_BRANCH) break;
+                
+                const angle = (j / GRAINS_PER_RING) * 2 * Math.PI;
+                const angleJitter = (Math.random() - 0.5) * 0.3;
+                const radiusJitter = 1.0 + (Math.random() - 0.5) * 0.2;
+                
+                // Ring 1 grain (at p1)
+                const grainPos1 = crossSectionVertex.copy(p1)
+                    .addScaledVector(tempSide, Math.cos(angle + angleJitter) * effectiveRadius1 * radiusJitter)
+                    .addScaledVector(tempBiNormal, Math.sin(angle + angleJitter) * effectiveRadius1 * radiusJitter);
+                
+                const idx1 = grainOffset * 3;
+                positions[idx1] = grainPos1.x;
+                positions[idx1 + 1] = grainPos1.y;
+                positions[idx1 + 2] = grainPos1.z;
+                
+                // Use branch color for all grains (same color per tentacle)
+                colors[idx1] = grainColor.r;
+                colors[idx1 + 1] = grainColor.g;
+                colors[idx1 + 2] = grainColor.b;
+                
+                // Size varies with taper and slight randomness
+                const baseSize = GRAIN_SIZE * taperFactor1 * depthScale;
+                sizes[grainOffset] = baseSize * (0.7 + Math.random() * 0.6);
+                
+                grainOffset++;
+                
+                // Ring 2 grain (at p2) - interpolated position
+                if (grainOffset >= MAX_GRAINS_PER_BRANCH) break;
+                
+                const grainPos2 = crossSectionVertex.copy(p2)
+                    .addScaledVector(tempSide2_local, Math.cos(angle + angleJitter) * effectiveRadius2 * radiusJitter)
+                    .addScaledVector(tempBiNormal2_local, Math.sin(angle + angleJitter) * effectiveRadius2 * radiusJitter);
+                
+                const idx2 = grainOffset * 3;
+                positions[idx2] = grainPos2.x;
+                positions[idx2 + 1] = grainPos2.y;
+                positions[idx2 + 2] = grainPos2.z;
+                
+                // Use branch color for all grains (same color per tentacle)
+                colors[idx2] = grainColor.r;
+                colors[idx2 + 1] = grainColor.g;
+                colors[idx2 + 2] = grainColor.b;
+                
+                sizes[grainOffset] = baseSize * (0.7 + Math.random() * 0.6);
+                
+                grainOffset++;
             }
-            // --- End Audio Reactive Color ---
-
-            for (let j = 0; j < TUBE_SIDES; j++) {
-                const angle1 = (j / TUBE_SIDES) * 2 * Math.PI;
-                const angle2 = ((j + 1) / TUBE_SIDES) * 2 * Math.PI;
-
-                const v_p1_j_main = crossSectionVertex.copy(p1)
-                    .addScaledVector(tempSide, Math.cos(angle1) * effectiveRadius1_main)
-                    .addScaledVector(tempBiNormal, Math.sin(angle1) * effectiveRadius1_main).clone();
-                const v_p1_j1_main = crossSectionVertex.copy(p1)
-                    .addScaledVector(tempSide, Math.cos(angle2) * effectiveRadius1_main)
-                    .addScaledVector(tempBiNormal, Math.sin(angle2) * effectiveRadius1_main).clone();
-                const v_p2_j_main = crossSectionVertex.copy(p2)
-                    .addScaledVector(tempSide2_local, Math.cos(angle1) * effectiveRadius2_main)
-                    .addScaledVector(tempBiNormal2_local, Math.sin(angle1) * effectiveRadius2_main).clone();
-                const v_p2_j1_main = crossSectionVertex.copy(p2)
-                    .addScaledVector(tempSide2_local, Math.cos(angle2) * effectiveRadius2_main)
-                    .addScaledVector(tempBiNormal2_local, Math.sin(angle2) * effectiveRadius2_main).clone();
-
-                mainPositions[mainPositionAttributeOffset + 0] = v_p1_j_main.x;  mainPositions[mainPositionAttributeOffset + 1] = v_p1_j_main.y;  mainPositions[mainPositionAttributeOffset + 2] = v_p1_j_main.z;
-                mainPositions[mainPositionAttributeOffset + 3] = v_p1_j1_main.x; mainPositions[mainPositionAttributeOffset + 4] = v_p1_j1_main.y; mainPositions[mainPositionAttributeOffset + 5] = v_p1_j1_main.z;
-                mainPositions[mainPositionAttributeOffset + 6] = v_p2_j_main.x;  mainPositions[mainPositionAttributeOffset + 7] = v_p2_j_main.y;  mainPositions[mainPositionAttributeOffset + 8] = v_p2_j_main.z;
-                edge1.subVectors(v_p1_j1_main, v_p1_j_main);
-                edge2.subVectors(v_p2_j_main, v_p1_j_main);
-                tempNormal.crossVectors(edge1, edge2).normalize();
-                for(let n=0; n<3; ++n) { mainNormals[mainNormalAttributeOffset + n*3 + 0] = tempNormal.x; mainNormals[mainNormalAttributeOffset + n*3 + 1] = tempNormal.y; mainNormals[mainNormalAttributeOffset + n*3 + 2] = tempNormal.z; }
-                mainPositionAttributeOffset += 9; mainNormalAttributeOffset += 9;
-                branch.currentVertexCount += 3;
-
-                mainPositions[mainPositionAttributeOffset + 0] = v_p1_j1_main.x; mainPositions[mainPositionAttributeOffset + 1] = v_p1_j1_main.y; mainPositions[mainPositionAttributeOffset + 2] = v_p1_j1_main.z;
-                mainPositions[mainPositionAttributeOffset + 3] = v_p2_j1_main.x; mainPositions[mainPositionAttributeOffset + 4] = v_p2_j1_main.y; mainPositions[mainPositionAttributeOffset + 5] = v_p2_j1_main.z;
-                mainPositions[mainPositionAttributeOffset + 6] = v_p2_j_main.x;  mainPositions[mainPositionAttributeOffset + 7] = v_p2_j_main.y;  mainPositions[mainPositionAttributeOffset + 8] = v_p2_j_main.z;
-                edge1.subVectors(v_p2_j1_main, v_p1_j1_main);
-                edge2.subVectors(v_p2_j_main, v_p1_j1_main);
-                tempNormal.crossVectors(edge1, edge2).normalize();
-                for(let n=0; n<3; ++n) { mainNormals[mainNormalAttributeOffset + n*3 + 0] = tempNormal.x; mainNormals[mainNormalAttributeOffset + n*3 + 1] = tempNormal.y; mainNormals[mainNormalAttributeOffset + n*3 + 2] = tempNormal.z; }
-                mainPositionAttributeOffset += 9; mainNormalAttributeOffset += 9;
-                branch.currentVertexCount += 3;
-            } 
-            mainGeometryNeedsUpdate = true; 
+            
+            geometryNeedsUpdate = true; 
         } 
         
+        branch.currentGrainCount = grainOffset;
         branch.drawnPathSegments = targetSegmentsToDraw; 
         
-        if(mainGeometryNeedsUpdate){
-          branch.mesh.geometry.setDrawRange(0, branch.currentVertexCount);
+        if(geometryNeedsUpdate){
+          branch.mesh.geometry.setDrawRange(0, branch.currentGrainCount);
           branch.mesh.geometry.attributes.position.needsUpdate = true;
-          branch.mesh.geometry.attributes.normal.needsUpdate = true; 
+          branch.mesh.geometry.attributes.color.needsUpdate = true;
+          branch.mesh.geometry.attributes.size.needsUpdate = true;
           branch.mesh.geometry.computeBoundingSphere(); 
           branch.mesh.geometry.computeBoundingBox(); 
         }
     }
 
-    return mainGeometryNeedsUpdate; // Now only depends on main geometry
+    return geometryNeedsUpdate;
 }
 
 export class Cybersigil {
@@ -468,9 +506,12 @@ export class Cybersigil {
     update(delta, isInteracting = false, audioFeatures = { bass: 0, mid: 0, treble: 0, beat: false, overallVolume: 0 }) {
         let sigilActivity = false;
         for (const branch of this.branches) {
+            // Grow the branch if not complete
             if (growStep(branch, delta, this, isInteracting, audioFeatures)) {
                 sigilActivity = true;
             }
+            // Always animate grains for all branches (even completed ones)
+            animateGrains(branch, audioFeatures);
         }
         return sigilActivity;
     }
