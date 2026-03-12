@@ -15,9 +15,14 @@ export class AudioManager {
         this.BEAT_COOLDOWN = 0.3;
         this.VOCAL_COOLDOWN = 0.4;
         this.SNARE_COOLDOWN = 0.2;
-        this.BASS_THRESHOLD_BEAT = 0.88;
-        this.VOCAL_THRESHOLD = 0.45;
-        this.SNARE_THRESHOLD = 0.70;
+        
+        // Separate thresholds for file vs mic (mic levels are typically lower)
+        this.BASS_THRESHOLD_FILE = 0.88;
+        this.VOCAL_THRESHOLD_FILE = 0.45;
+        this.SNARE_THRESHOLD_FILE = 0.70;
+        this.BASS_THRESHOLD_MIC = 0.25;
+        this.VOCAL_THRESHOLD_MIC = 0.15;
+        this.SNARE_THRESHOLD_MIC = 0.20;
 
         // Microphone setup
         this.micStream = null;
@@ -124,6 +129,7 @@ export class AudioManager {
             this.micGainNode.connect(this.analyserNode);
             
             this.isMicSetup = true;
+            this.isMicActive = true;
             this.isAudioSetup = true;
             console.log("Microphone setup complete - NO FEEDBACK ROUTING");
             
@@ -250,17 +256,23 @@ export class AudioManager {
             audioFeatures.snare = snareCount > 0 ? (snareSum / snareCount) / 255 : 0;
             audioFeatures.snareHigh = snareHighCount > 0 ? (snareHighSum / snareHighCount) / 255 : 0;
 
-            // Debug audio levels
+            // Select thresholds based on input source (mic has lower levels)
+            const bassThreshold = this.isMicActive ? this.BASS_THRESHOLD_MIC : this.BASS_THRESHOLD_FILE;
+            const vocalThreshold = this.isMicActive ? this.VOCAL_THRESHOLD_MIC : this.VOCAL_THRESHOLD_FILE;
+            const snareThreshold = this.isMicActive ? this.SNARE_THRESHOLD_MIC : this.SNARE_THRESHOLD_FILE;
+
+            // Debug audio levels (with source indicator)
             if (Math.floor(currentTime * 60) % 60 === 0) {
-                console.log(`Audio Levels - Bass: ${audioFeatures.bass.toFixed(2)}, Vocals: ${audioFeatures.vocals.toFixed(2)}, Snare: ${audioFeatures.snare.toFixed(2)}, Overall: ${audioFeatures.overallVolume.toFixed(2)}`);
+                const source = this.isMicActive ? 'MIC' : 'FILE';
+                console.log(`[${source}] Audio Levels - Bass: ${audioFeatures.bass.toFixed(2)} (th:${bassThreshold}), Vocals: ${audioFeatures.vocals.toFixed(2)}, Overall: ${audioFeatures.overallVolume.toFixed(2)}`);
             }
 
             // Beat detection
-            if (audioFeatures.bass > this.BASS_THRESHOLD_BEAT && (currentTime - this.lastBeatTime > this.BEAT_COOLDOWN)) {
+            if (audioFeatures.bass > bassThreshold && (currentTime - this.lastBeatTime > this.BEAT_COOLDOWN)) {
                 this.lastBeatTime = currentTime;
                 audioFeatures.beat = true;
                 
-                // BPM calculation for uploaded MP3 files
+                // BPM calculation for uploaded MP3 files only
                 if (!this.isMicActive && window.audioPlayer && window.audioPlayer.src) {
                     this.beatHistory.push(currentTime);
                     if (this.beatHistory.length > this.BPM_HISTORY_LENGTH) {
@@ -277,11 +289,11 @@ export class AudioManager {
                     }
                 }
                 
-                console.log(`Beat detected! Bass: ${audioFeatures.bass.toFixed(2)}, BPM: ${audioFeatures.bpm}`);
+                console.log(`Beat detected! Bass: ${audioFeatures.bass.toFixed(2)}, Threshold: ${bassThreshold}, BPM: ${audioFeatures.bpm}`);
             }
 
             // Vocal detection
-            if (audioFeatures.vocals > this.VOCAL_THRESHOLD && (currentTime - this.lastVocalTime > this.VOCAL_COOLDOWN)) {
+            if (audioFeatures.vocals > vocalThreshold && (currentTime - this.lastVocalTime > this.VOCAL_COOLDOWN)) {
                 this.lastVocalTime = currentTime;
                 audioFeatures.vocal = true;
                 console.log(`Vocal detected! Level: ${audioFeatures.vocals.toFixed(2)}`);
@@ -289,7 +301,7 @@ export class AudioManager {
 
             // Snare detection
             const combinedSnare = (audioFeatures.snare + audioFeatures.snareHigh) / 2;
-            if (combinedSnare > this.SNARE_THRESHOLD && (currentTime - this.lastSnareTime > this.SNARE_COOLDOWN)) {
+            if (combinedSnare > snareThreshold && (currentTime - this.lastSnareTime > this.SNARE_COOLDOWN)) {
                 this.lastSnareTime = currentTime;
                 audioFeatures.snareHit = true;
                 console.log(`Snare detected! Combined level: ${combinedSnare.toFixed(2)}`);
